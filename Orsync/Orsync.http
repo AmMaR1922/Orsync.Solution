@@ -1,0 +1,6 @@
+@Orsync_HostAddress = http://localhost:5251
+
+GET {{Orsync_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
