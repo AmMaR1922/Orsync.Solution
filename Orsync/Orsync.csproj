@@ -6,6 +6,13 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 	</PropertyGroup>
 
+	<!-- ✨ إضافة: ضمان نسخ wwwroot عند Publish -->
+	<ItemGroup>
+		<Content Include="wwwroot\**\*.*">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
 	<ItemGroup>
 		<!-- JWT Authentication -->
 		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
@@ -30,8 +37,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<!-- Folder for uploaded files -->
-		<Folder Include="wwwroot\OrsyncFiles\" />
+	  <Folder Include="wwwroot\uploads\" />
 	</ItemGroup>
 
 </Project>

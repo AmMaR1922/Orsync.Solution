@@ -1,14 +1,15 @@
 ﻿using ApplicationLayer.Services;
 using ApplicationLayer.UseCases;
+using ApplicationLayer.UseCases.GenerateMarketAnalysis;
+using FluentValidation;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
-using FluentValidation;
-using Microsoft.Extensions.DependencyInjection;
-using ApplicationLayer.UseCases.GenerateMarketAnalysis;
 
 
 
@@ -20,7 +21,8 @@ namespace ApplicationLayer.DependencyInjection
         public static IServiceCollection AddApplication(this IServiceCollection services)
         {
             // AutoMapper
-            services.AddAutoMapper(typeof(DependencyInjection).Assembly);
+            //services.AddAutoMapper(typeof(DependencyInjection).Assembly);
+            services.AddAutoMapper(Assembly.GetExecutingAssembly());
 
             // FluentValidation
             services.AddValidatorsFromAssemblyContaining<GenerateMarketAnalysisValidator>();

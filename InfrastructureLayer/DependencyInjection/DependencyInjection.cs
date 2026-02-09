@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using IFileUploadService = InfrastructureLayer.Services.IFileUploadService;
 
 namespace InfrastructureLayer.DependencyInjection
 {
@@ -54,6 +55,8 @@ namespace InfrastructureLayer.DependencyInjection
          
             services.AddScoped<IMarketForecastProvider, MarketForecastProvider>();
             services.AddScoped<IReportGenerator, ReportGeneratorService>();
+
+            services.AddScoped<IFileUploadService, FileUploadService>();
             // ✨ إضافة جديدة: Token Service
             services.AddScoped<ITokenService, TokenService>();
             return services;

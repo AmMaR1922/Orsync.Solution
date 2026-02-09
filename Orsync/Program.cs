@@ -96,7 +96,7 @@ builder.Services.AddSwaggerGen(c =>
         Description = "JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token.",
         Name = "Authorization",
         In = ParameterLocation.Header,
-        Type = SecuritySchemeType.ApiKey,
+        Type = SecuritySchemeType.Http,
         Scheme = "Bearer"
     });
 
@@ -105,7 +105,7 @@ builder.Services.AddSwaggerGen(c =>
         {
             new OpenApiSecurityScheme
             {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" },In = ParameterLocation.Header,Name ="Authorization"
             },
             Array.Empty<string>()
         }
@@ -133,14 +133,14 @@ var app = builder.Build();
 // ----------------------------
 // Middleware pipeline
 // ----------------------------
-if (app.Environment.IsDevelopment())
+if (true)
 {
     app.UseDeveloperExceptionPage();
     app.UseSwagger();
     app.UseSwaggerUI(c =>
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "Orsync API v1");
-        c.RoutePrefix = "swagger";
+        c.RoutePrefix = "";
     });
 }
 
