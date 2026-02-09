@@ -28,40 +28,88 @@ public class FileUploadController : ControllerBase
             ?? throw new UnauthorizedAccessException("User ID not found");
     }
 
+    //[HttpPost("upload")]
+    //[Consumes("multipart/form-data")]
+    //public async Task<IActionResult> UploadFile( IFormFile file)
+    //{
+    //    if (file == null || file.Length == 0)
+    //        return BadRequest(new { error = "No file provided" });
+
+    //    var filePath = await _fileUploadService.UploadFileAsync(file);
+
+    //    return Ok(new
+    //    {
+    //        message = "File uploaded successfully",
+    //        filePath,
+    //        fileName = file.FileName,
+    //        fileSize = file.Length
+    //    });
+    //}
+
+    //[HttpPost("upload-multiple")]
+    //[Consumes("multipart/form-data")]
+    //public async Task<IActionResult> UploadMultipleFiles( List<IFormFile> files)
+    //{
+    //    if (files == null || files.Count == 0)
+    //        return BadRequest(new { error = "No files provided" });
+
+    //    var filePaths = await _fileUploadService.UploadMultipleFilesAsync(files);
+
+    //    return Ok(new
+    //    {
+    //        message = $"{files.Count} files uploaded successfully",
+    //        files = files.Select((f, i) => new
+    //        {
+    //            fileName = f.FileName,
+    //            filePath = filePaths[i],
+    //            fileSize = f.Length
+    //        })
+    //    });
+    //}
+
+
+
+
+    //[HttpPost("upload")]
+    //[Consumes("multipart/form-data")]
+    //public async Task<IActionResult> Upload([FromForm] List<IFormFile> files)
+    //{
+    //    if (files == null || files.Count == 0)
+    //        return BadRequest(new { error = "No files provided" });
+
+    //    var uploadedFiles = await _fileUploadService.UploadMultipleFilesAsync(files);
+
+    //    return Ok(new
+    //    {
+    //        message = $"{files.Count} file(s) uploaded successfully",
+    //        files = files.Select((f, i) => new
+    //        {
+    //            fileName = f.FileName,
+    //            filePath = uploadedFiles[i],
+    //            fileSize = f.Length
+    //        })
+    //    });
+    //}
+
+
+
     [HttpPost("upload")]
     [Consumes("multipart/form-data")]
-    public async Task<IActionResult> UploadFile( IFormFile file)
-    {
-        if (file == null || file.Length == 0)
-            return BadRequest(new { error = "No file provided" });
-
-        var filePath = await _fileUploadService.UploadFileAsync(file);
-
-        return Ok(new
-        {
-            message = "File uploaded successfully",
-            filePath,
-            fileName = file.FileName,
-            fileSize = file.Length
-        });
-    }
-
-    [HttpPost("upload-multiple")]
-    [Consumes("multipart/form-data")]
-    public async Task<IActionResult> UploadMultipleFiles( List<IFormFile> files)
+    public async Task<IActionResult> UploadFiles([FromForm] List<IFormFile> files)
     {
         if (files == null || files.Count == 0)
             return BadRequest(new { error = "No files provided" });
 
-        var filePaths = await _fileUploadService.UploadMultipleFilesAsync(files);
+        var paths = await _fileUploadService.UploadMultipleFilesAsync(files);
 
         return Ok(new
         {
-            message = $"{files.Count} files uploaded successfully",
+            message = "Files uploaded successfully",
+            count = files.Count,
             files = files.Select((f, i) => new
             {
                 fileName = f.FileName,
-                filePath = filePaths[i],
+                filePath = paths[i],
                 fileSize = f.Length
             })
         });
