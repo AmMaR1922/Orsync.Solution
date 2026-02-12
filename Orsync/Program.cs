@@ -137,7 +137,7 @@ var app = builder.Build();
 // ----------------------------
 
 // 1. Swagger in Development
-if (app.Environment.IsDevelopment())
+if (true)
 {
     app.UseDeveloperExceptionPage();
     app.UseSwagger();
