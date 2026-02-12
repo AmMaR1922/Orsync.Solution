@@ -13,6 +13,7 @@ namespace ApplicationLayer.Contracts.Requests
         public string Product { get; set; } = string.Empty;
         public string Indication { get; set; } = string.Empty;
         public string Geography { get; set; } = string.Empty;
+        public List<string>? UploadedFilePaths { get; set; }
     }
 
 }

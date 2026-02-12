@@ -73,12 +73,6 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
         ClockSkew = TimeSpan.Zero
     };
-    
-    // ⚠️ مهم جداً: تعديل سلوك JWT مع Self-signed certificates
-    options.BackchannelHttpHandler = new HttpClientHandler
-    {
-        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-    };
 });
 
 builder.Services.AddAuthorization();
@@ -124,53 +118,25 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // ----------------------------
-// CORS Policy - ✅ النسخة المحسنة
+// CORS Policy
 // ----------------------------
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        // ✅ دعم credentials مع origins محددة بدل AllowAnyOrigin
-        policy.SetIsOriginAllowed(origin => true) // يسمح بأي origin في development
+        policy.AllowAnyOrigin()
               .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials(); // مهم للـ authentication
-    });
-    
-    // ✅ خيار إضافي للـ Swagger UI
-    options.AddPolicy("SwaggerUI", policy =>
-    {
-        policy.WithOrigins(
-            "https://localhost:7083",
-            "http://localhost:7083",
-            "https://localhost:5000",
-            "http://localhost:5000",
-            "https://localhost:3000",
-            "http://localhost:3000")
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials();
-    });
-});
-
-// ----------------------------
-// تكوين Kestrel لدعم HTTP/HTTPS
-// ----------------------------
-builder.WebHost.ConfigureKestrel(serverOptions =>
-{
-    // السماح بالاتصالات غير المشفرة للتجربة
-    serverOptions.ListenLocalhost(5000); // HTTP
-    serverOptions.ListenLocalhost(7083, listenOptions =>
-    {
-        listenOptions.UseHttps(); // HTTPS
+              .AllowAnyHeader();
     });
 });
 
 var app = builder.Build();
 
 // ----------------------------
-// Middleware pipeline
+// Middleware pipeline (تم تعديل الترتيب هنا)
 // ----------------------------
+
+// 1. Swagger in Development
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
@@ -179,33 +145,26 @@ if (app.Environment.IsDevelopment())
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "Orsync API v1");
         c.RoutePrefix = "";
-        
-        // ✅ مهم: تعطيل التحقق من الشهادة في Swagger UI
-        c.ConfigObject.AdditionalItems.Add("domPinning", false);
     });
 }
-else
-{
-    app.UseExceptionHandler("/Error");
-    app.UseHsts();
-}
 
-app.UseMiddleware<ExceptionHandlingMiddleware>();
-
-// ✅ تعطيل HTTPS Redirection في Development
-if (!app.Environment.IsDevelopment())
-{
-    app.UseHttpsRedirection();
-}
-
-app.UseStaticFiles(); // Needed for uploaded files
-
-// ✅ استخدام CORS قبل Authentication
+// 2. CORS (يجب أن يكون هنا قبل أي Middleware قد يولد خطأ)
 app.UseCors("AllowAll");
 
+// 3. Exception Handling (الآن سيرجع الـ Headers صح لو حصل خطأ)
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+// 4. HTTPS Redirection
+app.UseHttpsRedirection();
+
+// 5. Static Files
+app.UseStaticFiles();
+
+// 6. Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
 
+// 7. Map Controllers
 app.MapControllers();
 
 app.Run();

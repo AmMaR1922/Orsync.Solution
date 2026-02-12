@@ -8,7 +8,7 @@ namespace  Orsync.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-//[Authorize]
+ [Authorize]
 public class FileUploadController : ControllerBase
 {
     private readonly IFileUploadService _fileUploadService;
@@ -105,5 +105,36 @@ public class FileUploadController : ControllerBase
         });
     }
 
+
+    [HttpGet("my-files")]
+    public async Task<IActionResult> GetUserFiles()
+    {
+        var userId = GetUserId();
+
+        // 1. جلب كل التحليلات الخاصة بالمستخدم
+        var analyses = await _repository.GetAllByUserIdAsync(userId);
+
+        if (analyses == null || !analyses.Any())
+            return Ok(new { message = "No files found for this user", files = new List<object>() });
+
+        // 2. تجميع كل الملفات من جميع التحليلات في قائمة واحدة
+        // نفترض أن اسم الحقل داخل الموديل هو UploadedFiles
+        var allFiles = analyses
+            .Where(a => a.UploadedFiles != null) // التأكد من وجود ملفات
+            .SelectMany(a => a.UploadedFiles, (analysis, filePath) => new
+            {
+                AnalysisId = analysis.Id,
+                // اختياري: لو حابب تعرض عنوان التحليل
+                FilePath = filePath,
+                FileName = Path.GetFileName(filePath) // استخراج اسم الملف من المسار
+            })
+            .ToList();
+
+        return Ok(new
+        {
+            count = allFiles.Count,
+            files = allFiles
+        });
+    }
 
 }

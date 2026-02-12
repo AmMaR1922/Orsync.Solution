@@ -69,5 +69,13 @@ namespace InfrastructureLayer.Repositories
                 await _context.SaveChangesAsync(cancellationToken);
             }
         }
+
+        public async Task<IEnumerable<MarketAnalysis>> GetAllByUserIdAsync(string userId)
+        {
+            // هذا المثال يفترض استخدام Entity Framework Core
+            return await _context.MarketAnalyses
+                .Where(a => a.UserId == userId)
+                .ToListAsync();
+        }
     }
 }

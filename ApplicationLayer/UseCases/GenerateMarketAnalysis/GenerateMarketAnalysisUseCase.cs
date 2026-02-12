@@ -10,12 +10,11 @@ using FluentValidation;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace ApplicationLayer.UseCases.GenerateMarketAnalysis
 {
-
     public class GenerateMarketAnalysisUseCase
     {
         private readonly IMarketAnalysisRepository _repository;
@@ -62,6 +61,17 @@ namespace ApplicationLayer.UseCases.GenerateMarketAnalysis
                 userId);
 
             analysis.SetStatus(AnalysisStatus.InProgress);
+
+            // ======================== التعديل هنا ========================
+            // 2.5 ربط الملفات المرفوعة مسبقاً بالتحليل الجديد
+            if (request.UploadedFilePaths != null && request.UploadedFilePaths.Any())
+            {
+                foreach (var filePath in request.UploadedFilePaths)
+                {
+                    analysis.AddUploadedFile(filePath);
+                }
+            }
+            // =============================================================
 
             try
             {

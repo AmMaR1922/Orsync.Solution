@@ -15,6 +15,7 @@ namespace ApplicationLayer.Interfaces
         Task<MarketAnalysis> AddAsync(MarketAnalysis analysis, CancellationToken cancellationToken = default);
         Task UpdateAsync(MarketAnalysis analysis, CancellationToken cancellationToken = default);
         Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+        Task<IEnumerable<MarketAnalysis>> GetAllByUserIdAsync(string userId);
     }
 
 }
