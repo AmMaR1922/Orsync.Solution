@@ -28,99 +28,46 @@ public class FileUploadController : ControllerBase
             ?? throw new UnauthorizedAccessException("User ID not found");
     }
 
-    //[HttpPost("upload")]
-    //[Consumes("multipart/form-data")]
-    //public async Task<IActionResult> UploadFile( IFormFile file)
-    //{
-    //    if (file == null || file.Length == 0)
-    //        return BadRequest(new { error = "No file provided" });
-
-    //    var filePath = await _fileUploadService.UploadFileAsync(file);
-
-    //    return Ok(new
-    //    {
-    //        message = "File uploaded successfully",
-    //        filePath,
-    //        fileName = file.FileName,
-    //        fileSize = file.Length
-    //    });
-    //}
-
-    //[HttpPost("upload-multiple")]
-    //[Consumes("multipart/form-data")]
-    //public async Task<IActionResult> UploadMultipleFiles( List<IFormFile> files)
-    //{
-    //    if (files == null || files.Count == 0)
-    //        return BadRequest(new { error = "No files provided" });
-
-    //    var filePaths = await _fileUploadService.UploadMultipleFilesAsync(files);
-
-    //    return Ok(new
-    //    {
-    //        message = $"{files.Count} files uploaded successfully",
-    //        files = files.Select((f, i) => new
-    //        {
-    //            fileName = f.FileName,
-    //            filePath = filePaths[i],
-    //            fileSize = f.Length
-    //        })
-    //    });
-    //}
-
-
-
-
-    //[HttpPost("upload")]
-    //[Consumes("multipart/form-data")]
-    //public async Task<IActionResult> Upload([FromForm] List<IFormFile> files)
-    //{
-    //    if (files == null || files.Count == 0)
-    //        return BadRequest(new { error = "No files provided" });
-
-    //    var uploadedFiles = await _fileUploadService.UploadMultipleFilesAsync(files);
-
-    //    return Ok(new
-    //    {
-    //        message = $"{files.Count} file(s) uploaded successfully",
-    //        files = files.Select((f, i) => new
-    //        {
-    //            fileName = f.FileName,
-    //            filePath = uploadedFiles[i],
-    //            fileSize = f.Length
-    //        })
-    //    });
-    //}
+   
 
 
 
     [HttpPost("upload")]
     [Consumes("multipart/form-data")]
-    public async Task<IActionResult> UploadFiles([FromForm] List<IFormFile> files)
+    public async Task<IActionResult> UploadFiles([FromForm] IFormFileCollection files)
     {
         if (files == null || files.Count == 0)
             return BadRequest(new { error = "No files provided" });
 
-        var paths = await _fileUploadService.UploadMultipleFilesAsync(files);
+        var uploadedPaths = new List<string>();
+
+        foreach (var file in files)
+        {
+            if (file.Length > 0)
+            {
+                var path = await _fileUploadService.UploadFileAsync(file);
+                uploadedPaths.Add(path);
+            }
+        }
 
         return Ok(new
         {
             message = "Files uploaded successfully",
-            count = files.Count,
-            files = files.Select((f, i) => new
-            {
-                fileName = f.FileName,
-                filePath = paths[i],
-                fileSize = f.Length
-            })
+            count = uploadedPaths.Count,
+            files = uploadedPaths
         });
     }
 
+
+ 
     [HttpPost("upload-to-analysis/{analysisId}")]
     [Consumes("multipart/form-data")]
-    public async Task<IActionResult> UploadToAnalysis(Guid analysisId,  IFormFile file)
+    public async Task<IActionResult> UploadToAnalysis(
+    Guid analysisId,
+    [FromForm] IFormFileCollection files)
     {
-        if (file == null || file.Length == 0)
-            return BadRequest(new { error = "No file provided" });
+        if (files == null || files.Count == 0)
+            return BadRequest(new { error = "No files provided" });
 
         var userId = GetUserId();
         var analysis = await _repository.GetByIdAsync(analysisId);
@@ -131,16 +78,32 @@ public class FileUploadController : ControllerBase
         if (analysis.UserId != userId)
             return Forbid();
 
-        var filePath = await _fileUploadService.UploadFileAsync(file);
-        analysis.AddUploadedFile(filePath);
+        var uploadedFiles = new List<object>();
+
+        foreach (var file in files)
+        {
+            if (file.Length == 0) continue;
+
+            var filePath = await _fileUploadService.UploadFileAsync(file);
+            analysis.AddUploadedFile(filePath);
+
+            uploadedFiles.Add(new
+            {
+                fileName = file.FileName,
+                filePath
+            });
+        }
+
         await _repository.UpdateAsync(analysis);
 
         return Ok(new
         {
-            message = "File uploaded and attached to analysis successfully",
+            message = "Files uploaded successfully",
             analysisId,
-            filePath,
-            fileName = file.FileName
+            count = uploadedFiles.Count,
+            files = uploadedFiles
         });
     }
+
+
 }

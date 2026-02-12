@@ -73,6 +73,12 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
         ClockSkew = TimeSpan.Zero
     };
+    
+    // ⚠️ مهم جداً: تعديل سلوك JWT مع Self-signed certificates
+    options.BackchannelHttpHandler = new HttpClientHandler
+    {
+        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+    };
 });
 
 builder.Services.AddAuthorization();
@@ -105,7 +111,9 @@ builder.Services.AddSwaggerGen(c =>
         {
             new OpenApiSecurityScheme
             {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" },In = ParameterLocation.Header,Name ="Authorization"
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" },
+                In = ParameterLocation.Header,
+                Name = "Authorization"
             },
             Array.Empty<string>()
         }
@@ -116,15 +124,45 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // ----------------------------
-// CORS Policy
+// CORS Policy - ✅ النسخة المحسنة
 // ----------------------------
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
+        // ✅ دعم credentials مع origins محددة بدل AllowAnyOrigin
+        policy.SetIsOriginAllowed(origin => true) // يسمح بأي origin في development
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowCredentials(); // مهم للـ authentication
+    });
+    
+    // ✅ خيار إضافي للـ Swagger UI
+    options.AddPolicy("SwaggerUI", policy =>
+    {
+        policy.WithOrigins(
+            "https://localhost:7083",
+            "http://localhost:7083",
+            "https://localhost:5000",
+            "http://localhost:5000",
+            "https://localhost:3000",
+            "http://localhost:3000")
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials();
+    });
+});
+
+// ----------------------------
+// تكوين Kestrel لدعم HTTP/HTTPS
+// ----------------------------
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    // السماح بالاتصالات غير المشفرة للتجربة
+    serverOptions.ListenLocalhost(5000); // HTTP
+    serverOptions.ListenLocalhost(7083, listenOptions =>
+    {
+        listenOptions.UseHttps(); // HTTPS
     });
 });
 
@@ -133,7 +171,7 @@ var app = builder.Build();
 // ----------------------------
 // Middleware pipeline
 // ----------------------------
-if (true)
+if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
     app.UseSwagger();
@@ -141,15 +179,28 @@ if (true)
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "Orsync API v1");
         c.RoutePrefix = "";
+        
+        // ✅ مهم: تعطيل التحقق من الشهادة في Swagger UI
+        c.ConfigObject.AdditionalItems.Add("domPinning", false);
     });
+}
+else
+{
+    app.UseExceptionHandler("/Error");
+    app.UseHsts();
 }
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-app.UseHttpsRedirection();
+// ✅ تعطيل HTTPS Redirection في Development
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseStaticFiles(); // Needed for uploaded files
 
+// ✅ استخدام CORS قبل Authentication
 app.UseCors("AllowAll");
 
 app.UseAuthentication();

@@ -103,8 +103,9 @@ namespace Orsync.Controllers
 
             await _repository.DeleteAsync(id, cancellationToken);
 
-            return NoContent();
+            // بدل NoContent نرجع رسالة نجاح
+            return Ok(new { message = "Analysis deleted successfully" });
         }
-    }
 
-}
+    }
+    }

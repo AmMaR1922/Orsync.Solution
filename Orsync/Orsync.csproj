@@ -7,11 +7,6 @@
 	</PropertyGroup>
 
 	<!-- ✨ إضافة: ضمان نسخ wwwroot عند Publish -->
-	<ItemGroup>
-		<Content Include="wwwroot\**\*.*">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</Content>
-	</ItemGroup>
 
 	<ItemGroup>
 		<!-- JWT Authentication -->
