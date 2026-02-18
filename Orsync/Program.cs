@@ -140,6 +140,8 @@ var app = builder.Build();
 if (true)
 {
     app.UseDeveloperExceptionPage();
+
+
     app.UseSwagger();
     app.UseSwaggerUI(c =>
     {
