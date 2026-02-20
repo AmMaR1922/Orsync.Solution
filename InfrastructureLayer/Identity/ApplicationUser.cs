@@ -1,12 +1,21 @@
 ﻿using Microsoft.AspNetCore.Identity;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
-namespace InfrastructureLayer.Identity;
-
-public class ApplicationUser : IdentityUser
+namespace InfrastructureLayer.Identity
 {
-    public string? FirstName { get; set; }
-    public string? LastName { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public string? RefreshToken { get; set; }
-    public DateTime? RefreshTokenExpiryTime { get; set; }
+    public class ApplicationUser : IdentityUser
+    {
+        public string? FirstName { get; set; }
+        public string? LastName { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        // ✨ إضافة جديدة: Refresh Token
+        public string? RefreshToken { get; set; }
+        public DateTime? RefreshTokenExpiryTime { get; set; }
+    }
+
 }
