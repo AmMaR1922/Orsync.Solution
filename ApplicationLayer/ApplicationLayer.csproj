@@ -17,6 +17,7 @@
 
 		<!-- EF Core -->
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Identity.Stores" Version="8.0.0" />
 	</ItemGroup>
 
 	<ItemGroup>

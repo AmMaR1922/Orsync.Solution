@@ -6,11 +6,33 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace InfrastructureLayer.Migrations
 {
     /// <inheritdoc />
-    public partial class initial : Migration
+    public partial class Initial : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.CreateTable(
+                name: "Analyses",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    UserId = table.Column<string>(type: "nvarchar(450)", maxLength: 450, nullable: false),
+                    TherapeuticArea = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Product = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Indication = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Geography = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    ResearchDepth = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    ResponseJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    FileIdsJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Analyses", x => x.Id);
+                });
+
             migrationBuilder.CreateTable(
                 name: "AspNetRoles",
                 columns: table => new
@@ -33,6 +55,8 @@ namespace InfrastructureLayer.Migrations
                     FirstName = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     LastName = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    RefreshToken = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    RefreshTokenExpiryTime = table.Column<DateTime>(type: "datetime2", nullable: true),
                     UserName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     NormalizedUserName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     Email = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
@@ -54,24 +78,22 @@ namespace InfrastructureLayer.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "MarketAnalyses",
+                name: "UploadedFiles",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    TherapeuticArea = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Product = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Indication = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
-                    Geography = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    ExecutiveSummary = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                     UserId = table.Column<string>(type: "nvarchar(450)", maxLength: 450, nullable: false),
-                    UploadedFiles = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    FileName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
+                    FilePath = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
+                    FileSize = table.Column<long>(type: "bigint", nullable: false),
+                    FileExtension = table.Column<string>(type: "nvarchar(10)", maxLength: 10, nullable: false),
+                    BatchId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_MarketAnalyses", x => x.Id);
+                    table.PrimaryKey("PK_UploadedFiles", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -180,53 +202,15 @@ namespace InfrastructureLayer.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
-            migrationBuilder.CreateTable(
-                name: "MarketForecasts",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    MarketSizeInBillions = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
-                    CAGR = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
-                    ForecastYears = table.Column<int>(type: "int", nullable: false),
-                    ConfidenceLevel = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
-                    MarketAnalysisId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_MarketForecasts", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_MarketForecasts_MarketAnalyses_MarketAnalysisId",
-                        column: x => x.MarketAnalysisId,
-                        principalTable: "MarketAnalyses",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
+            migrationBuilder.CreateIndex(
+                name: "IX_Analyses_CreatedAt",
+                table: "Analyses",
+                column: "CreatedAt");
 
-            migrationBuilder.CreateTable(
-                name: "SWOTAnalyses",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Strengths = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    Weaknesses = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    Opportunities = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    Threats = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    MarketAnalysisId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_SWOTAnalyses", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_SWOTAnalyses_MarketAnalyses_MarketAnalysisId",
-                        column: x => x.MarketAnalysisId,
-                        principalTable: "MarketAnalyses",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
+            migrationBuilder.CreateIndex(
+                name: "IX_Analyses_UserId",
+                table: "Analyses",
+                column: "UserId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_AspNetRoleClaims_RoleId",
@@ -268,36 +252,17 @@ namespace InfrastructureLayer.Migrations
                 filter: "[NormalizedUserName] IS NOT NULL");
 
             migrationBuilder.CreateIndex(
-                name: "IX_MarketAnalyses_CreatedAt",
-                table: "MarketAnalyses",
-                column: "CreatedAt");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_MarketAnalyses_Status",
-                table: "MarketAnalyses",
-                column: "Status");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_MarketAnalyses_UserId",
-                table: "MarketAnalyses",
-                column: "UserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_MarketForecasts_MarketAnalysisId",
-                table: "MarketForecasts",
-                column: "MarketAnalysisId",
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_SWOTAnalyses_MarketAnalysisId",
-                table: "SWOTAnalyses",
-                column: "MarketAnalysisId",
-                unique: true);
+                name: "IX_UploadedFiles_BatchId",
+                table: "UploadedFiles",
+                column: "BatchId");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "Analyses");
+
             migrationBuilder.DropTable(
                 name: "AspNetRoleClaims");
 
@@ -314,19 +279,13 @@ namespace InfrastructureLayer.Migrations
                 name: "AspNetUserTokens");
 
             migrationBuilder.DropTable(
-                name: "MarketForecasts");
-
-            migrationBuilder.DropTable(
-                name: "SWOTAnalyses");
+                name: "UploadedFiles");
 
             migrationBuilder.DropTable(
                 name: "AspNetRoles");
 
             migrationBuilder.DropTable(
                 name: "AspNetUsers");
-
-            migrationBuilder.DropTable(
-                name: "MarketAnalyses");
         }
     }
 }

@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace InfrastructureLayer.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260207080356_initial")]
-    partial class initial
+    [Migration("20260220123018_Initial")]
+    partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -25,7 +25,7 @@ namespace InfrastructureLayer.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("DomainLayer.Entities.MarketAnalysis", b =>
+            modelBuilder.Entity("DomainLayer.Entities.Analysis", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -34,31 +34,46 @@ namespace InfrastructureLayer.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("ExecutiveSummary")
+                    b.Property<string>("FileIdsJson")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("Geography")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("Indication")
                         .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar(300)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Product")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("ResearchDepth")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ResponseJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<string>("TherapeuticArea")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
-
-                    b.Property<string>("UploadedFiles")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("UserId")
                         .IsRequired()
@@ -69,82 +84,54 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasIndex("CreatedAt");
 
-                    b.HasIndex("Status");
-
                     b.HasIndex("UserId");
 
-                    b.ToTable("MarketAnalyses", (string)null);
+                    b.ToTable("Analyses", (string)null);
                 });
 
-            modelBuilder.Entity("DomainLayer.Entities.MarketForecast", b =>
+            modelBuilder.Entity("DomainLayer.Entities.UploadedFile", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<decimal>("CAGR")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("ForecastYears")
-                        .HasColumnType("int");
-
-                    b.Property<Guid>("MarketAnalysisId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("MarketSizeInBillions")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MarketAnalysisId")
-                        .IsUnique();
-
-                    b.ToTable("MarketForecasts", (string)null);
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.SWOTAnalysis", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
+                    b.Property<Guid>("BatchId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<Guid>("MarketAnalysisId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Opportunities")
+                    b.Property<string>("FileExtension")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
 
-                    b.Property<string>("Strengths")
+                    b.Property<string>("FileName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
-                    b.Property<string>("Threats")
+                    b.Property<string>("FilePath")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("Weaknesses")
+                    b.Property<string>("UserId")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("MarketAnalysisId")
-                        .IsUnique();
+                    b.HasIndex("BatchId");
 
-                    b.ToTable("SWOTAnalyses", (string)null);
+                    b.ToTable("UploadedFiles", (string)null);
                 });
 
             modelBuilder.Entity("InfrastructureLayer.Identity.ApplicationUser", b =>
@@ -197,6 +184,12 @@ namespace InfrastructureLayer.Migrations
 
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("bit");
+
+                    b.Property<string>("RefreshToken")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("RefreshTokenExpiryTime")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("nvarchar(max)");
@@ -354,93 +347,6 @@ namespace InfrastructureLayer.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
-            modelBuilder.Entity("DomainLayer.Entities.MarketAnalysis", b =>
-                {
-                    b.OwnsOne("DomainLayer.ValueObjects.Geography", "Geography", b1 =>
-                        {
-                            b1.Property<Guid>("MarketAnalysisId")
-                                .HasColumnType("uniqueidentifier");
-
-                            b1.Property<string>("Region")
-                                .IsRequired()
-                                .HasMaxLength(100)
-                                .HasColumnType("nvarchar(100)")
-                                .HasColumnName("Geography");
-
-                            b1.HasKey("MarketAnalysisId");
-
-                            b1.ToTable("MarketAnalyses");
-
-                            b1.WithOwner()
-                                .HasForeignKey("MarketAnalysisId");
-                        });
-
-                    b.OwnsOne("DomainLayer.ValueObjects.TherapeuticArea", "TherapeuticArea", b1 =>
-                        {
-                            b1.Property<Guid>("MarketAnalysisId")
-                                .HasColumnType("uniqueidentifier");
-
-                            b1.Property<string>("Name")
-                                .IsRequired()
-                                .HasMaxLength(200)
-                                .HasColumnType("nvarchar(200)")
-                                .HasColumnName("TherapeuticArea");
-
-                            b1.HasKey("MarketAnalysisId");
-
-                            b1.ToTable("MarketAnalyses");
-
-                            b1.WithOwner()
-                                .HasForeignKey("MarketAnalysisId");
-                        });
-
-                    b.Navigation("Geography")
-                        .IsRequired();
-
-                    b.Navigation("TherapeuticArea")
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.MarketForecast", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.MarketAnalysis", null)
-                        .WithOne("MarketForecast")
-                        .HasForeignKey("DomainLayer.Entities.MarketForecast", "MarketAnalysisId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.OwnsOne("DomainLayer.ValueObjects.ConfidenceLevel", "Confidence", b1 =>
-                        {
-                            b1.Property<Guid>("MarketForecastId")
-                                .HasColumnType("uniqueidentifier");
-
-                            b1.Property<string>("Level")
-                                .IsRequired()
-                                .HasMaxLength(50)
-                                .HasColumnType("nvarchar(50)")
-                                .HasColumnName("ConfidenceLevel");
-
-                            b1.HasKey("MarketForecastId");
-
-                            b1.ToTable("MarketForecasts");
-
-                            b1.WithOwner()
-                                .HasForeignKey("MarketForecastId");
-                        });
-
-                    b.Navigation("Confidence")
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.SWOTAnalysis", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.MarketAnalysis", null)
-                        .WithOne("SWOTAnalysis")
-                        .HasForeignKey("DomainLayer.Entities.SWOTAnalysis", "MarketAnalysisId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -489,15 +395,6 @@ namespace InfrastructureLayer.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.MarketAnalysis", b =>
-                {
-                    b.Navigation("MarketForecast")
-                        .IsRequired();
-
-                    b.Navigation("SWOTAnalysis")
                         .IsRequired();
                 });
 #pragma warning restore 612, 618

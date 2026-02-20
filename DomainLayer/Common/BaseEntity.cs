@@ -19,7 +19,7 @@ namespace DomainLayer.Common
             CreatedAt = DateTime.UtcNow;
         }
 
-        public void SetUpdatedAt()
+        protected void SetUpdatedAt()
         {
             UpdatedAt = DateTime.UtcNow;
         }
