@@ -169,21 +169,23 @@
 //app.MapControllers();
 
 //app.Run();
-
-
 using InfrastructureLayer.DependencyInjection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.Features; // لازم لـ FormOptions
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Services
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
 
+// إضافة البنية التحتية
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// إعداد JWT
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey not configured");
 
@@ -206,6 +208,7 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+// إعداد CORS مرة واحدة فقط
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -216,19 +219,68 @@ builder.Services.AddCors(options =>
     });
 });
 
+// زيادة الحد الأقصى لحجم الملفات المرفوعة
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 100_000_000; // 100 MB
+});
+
+// إعداد Swagger مع JWT + Authorize تلقائي
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "My API", Version = "v1" });
+
+    // إعداد JWT Bearer
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "ضع رمز الـ JWT هنا (سيتم تعبئته تلقائيًا بعد تسجيل الدخول)"
+    });
+
+    // ربط الـ Security Requirement بكل الـ endpoints
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                },
+                Scheme = "bearer",
+                Name = "Authorization",
+                In = ParameterLocation.Header
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+// Middleware
+if (true)
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1");
+        c.RoutePrefix = string.Empty;
+    });
 }
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
-app.UseCors("AllowAll");
+app.UseCors("AllowAll"); // تأكد إنك تستخدم نفس الاسم هنا
 app.UseAuthentication();
 app.UseAuthorization();
+ 
+
 app.MapControllers();
 
 app.Run();

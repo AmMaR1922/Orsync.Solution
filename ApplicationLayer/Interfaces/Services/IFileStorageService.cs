@@ -1,12 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace ApplicationLayer.Interfaces.Services
 {
-
     public interface IFileStorageService
     {
         Task<FileUploadResult> UploadFileAsync(
@@ -20,8 +17,8 @@ namespace ApplicationLayer.Interfaces.Services
 
     public class FileUploadResult
     {
-        public string FilePath { get; set; } = string.Empty;
-        public string PublicUrl { get; set; } = string.Empty;
+        public string FilePath { get; set; } = string.Empty;   // /uploads/file.ext
+        public string PublicUrl { get; set; } = string.Empty;  // https://domain/uploads/file.ext
         public long FileSize { get; set; }
     }
 }

@@ -2,6 +2,9 @@
 
 namespace ApplicationLayer.Contracts.DTOs;
 
+/// <summary>
+/// ✨ الـ Response الرئيسي - ده اللي بيرجع للـ User
+/// </summary>
 public class GenerateMarketAnalysisResponse
 {
     [JsonPropertyName("id")]
@@ -42,7 +45,15 @@ public class GenerateMarketAnalysisResponse
 
     [JsonPropertyName("triangulation")]
     public TriangulationDto Triangulation { get; set; } = new();
+
+    // ✨✨✨ ده اللي ضفته - الملفات مع الـ URLs ✨✨✨
+    [JsonPropertyName("uploaded_files")]
+    public List<UploadedFileUrlDto> UploadedFiles { get; set; } = new();
 }
+
+// ========================================
+// Supporting DTOs
+// ========================================
 
 public class InputDataDto
 {
@@ -207,4 +218,29 @@ public class TriangulationPointDto
 
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
+}
+
+// ========================================
+// ✨✨✨ ده الـ DTO الجديد للملفات ✨✨✨
+// ========================================
+
+/// <summary>
+/// معلومات الملف مع URL للـ ML Engineer
+/// </summary>
+public class UploadedFileUrlDto
+{
+    [JsonPropertyName("file_id")]
+    public string FileId { get; set; } = string.Empty;
+
+    [JsonPropertyName("file_name")]
+    public string FileName { get; set; } = string.Empty;
+
+    [JsonPropertyName("file_url")]
+    public string FileUrl { get; set; } = string.Empty;  // ✨ URL المباشر للتحميل
+
+    [JsonPropertyName("file_size")]
+    public long FileSize { get; set; }
+
+    [JsonPropertyName("file_extension")]
+    public string FileExtension { get; set; } = string.Empty;
 }

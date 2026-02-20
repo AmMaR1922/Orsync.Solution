@@ -7,7 +7,6 @@ namespace InfrastructureLayer.Services;
 public class LocalFileStorageService : IFileStorageService
 {
     private readonly IWebHostEnvironment _environment;
-    private readonly IConfiguration _configuration;
     private readonly string _uploadPath;
     private readonly string _baseUrl;
 
@@ -16,14 +15,15 @@ public class LocalFileStorageService : IFileStorageService
         IConfiguration configuration)
     {
         _environment = environment;
-        _configuration = configuration;
 
+        // 🔹 تحديد wwwroot
         var webRootPath = _environment.WebRootPath;
         if (string.IsNullOrWhiteSpace(webRootPath))
         {
             webRootPath = Path.Combine(_environment.ContentRootPath, "wwwroot");
         }
 
+        // 🔹 فولدر uploads
         _uploadPath = Path.Combine(webRootPath, "uploads");
 
         if (!Directory.Exists(_uploadPath))
@@ -31,7 +31,9 @@ public class LocalFileStorageService : IFileStorageService
             Directory.CreateDirectory(_uploadPath);
         }
 
-        _baseUrl = _configuration["FileStorage:BaseUrl"] ?? "https://localhost:7001";
+        // 🔹 الدومين الحقيقي من appsettings
+        _baseUrl = configuration["FileStorage:BaseUrl"]
+                   ?? throw new Exception("FileStorage:BaseUrl is not configured.");
     }
 
     public async Task<FileUploadResult> UploadFileAsync(
@@ -40,20 +42,24 @@ public class LocalFileStorageService : IFileStorageService
         string contentType,
         CancellationToken cancellationToken = default)
     {
-        var uniqueFileName = $"{Guid.NewGuid()}{Path.GetExtension(fileName)}";
-        var filePath = Path.Combine(_uploadPath, uniqueFileName);
+        var extension = Path.GetExtension(fileName);
+        var uniqueFileName = $"{Guid.NewGuid()}{extension}";
 
-        using (var fileStreamOut = new FileStream(filePath, FileMode.Create))
+        var physicalPath = Path.Combine(_uploadPath, uniqueFileName);
+
+        using (var fileStreamOut = new FileStream(physicalPath, FileMode.Create))
         {
             await fileStream.CopyToAsync(fileStreamOut, cancellationToken);
         }
 
-        var fileInfo = new FileInfo(filePath);
-        var publicUrl = $"{_baseUrl}/uploads/{uniqueFileName}";
+        var fileInfo = new FileInfo(physicalPath);
+
+        var relativePath = $"/uploads/{uniqueFileName}";
+        var publicUrl = $"{_baseUrl}{relativePath}";
 
         return new FileUploadResult
         {
-            FilePath = $"/uploads/{uniqueFileName}",
+            FilePath = relativePath,   // نخزن النسبي مش الفيزكال
             PublicUrl = publicUrl,
             FileSize = fileInfo.Length
         };
@@ -61,11 +67,13 @@ public class LocalFileStorageService : IFileStorageService
 
     public Task DeleteFileAsync(string filePath)
     {
-        var fullPath = Path.Combine(_uploadPath, Path.GetFileName(filePath));
+        // filePath جاي بصيغة /uploads/filename.ext
+        var fileName = Path.GetFileName(filePath);
+        var physicalPath = Path.Combine(_uploadPath, fileName);
 
-        if (File.Exists(fullPath))
+        if (File.Exists(physicalPath))
         {
-            File.Delete(fullPath);
+            File.Delete(physicalPath);
         }
 
         return Task.CompletedTask;

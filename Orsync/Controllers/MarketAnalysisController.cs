@@ -18,17 +18,20 @@ public class MarketAnalysisController : ControllerBase
     private readonly IUploadedFileRepository _fileRepository;
     private readonly IFileStorageService _fileStorageService;
     private readonly ILogger<MarketAnalysisController> _logger;
+    private readonly IConfiguration _configuration;
 
     public MarketAnalysisController(
         IAnalysisRepository analysisRepository,
         IUploadedFileRepository fileRepository,
         IFileStorageService fileStorageService,
-        ILogger<MarketAnalysisController> logger)
+        ILogger<MarketAnalysisController> logger,
+        IConfiguration configuration)
     {
         _analysisRepository = analysisRepository;
         _fileRepository = fileRepository;
         _fileStorageService = fileStorageService;
         _logger = logger;
+        _configuration = configuration;
     }
 
     private string GetUserId()
@@ -38,7 +41,7 @@ public class MarketAnalysisController : ControllerBase
     }
 
     /// <summary>
-    /// توليد تحليل سوقي شامل مع رفع ملفات اختياري
+    /// ✨ THE MAIN ENDPOINT - توليد تحليل سوقي مع رفع ملفات
     /// </summary>
     [HttpPost("generate")]
     [Consumes("multipart/form-data")]
@@ -54,17 +57,26 @@ public class MarketAnalysisController : ControllerBase
         {
             var userId = GetUserId();
 
-            // 1. Upload files (if provided)
+            _logger.LogInformation(
+                "Generate analysis request from user {UserId} for {Product}",
+                userId, product);
+
+            // ✅ 1. Upload files and generate URLs
+            var uploadedFileUrls = new List<UploadedFileUrlDto>();
             var fileIds = new List<Guid>();
 
             if (files != null && files.Any())
             {
                 var batchId = Guid.NewGuid();
+                var baseUrl = _configuration["FileStorage:BaseUrl"] ?? Request.Scheme + "://" + Request.Host;
+
+                _logger.LogInformation("Uploading {Count} files", files.Count);
 
                 foreach (var file in files)
                 {
                     if (file.Length == 0) continue;
 
+                    // Upload to storage
                     var memoryStream = new MemoryStream();
                     await file.CopyToAsync(memoryStream);
                     memoryStream.Position = 0;
@@ -77,6 +89,7 @@ public class MarketAnalysisController : ControllerBase
 
                     memoryStream.Dispose();
 
+                    // Save metadata to DB
                     var uploadedFile = new UploadedFile(
                         userId: userId,
                         fileName: file.FileName,
@@ -88,13 +101,23 @@ public class MarketAnalysisController : ControllerBase
 
                     await _fileRepository.AddAsync(uploadedFile);
                     fileIds.Add(uploadedFile.Id);
+
+                    // ✨ Add to URLs list for ML Engineer
+                    uploadedFileUrls.Add(new UploadedFileUrlDto
+                    {
+                        FileId = uploadedFile.Id.ToString(),
+                        FileName = uploadedFile.FileName,
+                        FileUrl = uploadResult.PublicUrl,  // ✨ URL للـ ML Engineer
+                        FileSize = uploadedFile.FileSize,
+                        FileExtension = uploadedFile.FileExtension
+                    });
                 }
             }
 
-            // 2. Generate comprehensive analysis response
+            // ✅ 2. Generate comprehensive response
             var response = GenerateComprehensiveResponse(therapeuticArea, product, indication, geography);
 
-            // 3. Create Analysis entity
+            // ✅ 3. Create Analysis entity
             var analysis = new Analysis(
                 userId: userId,
                 therapeuticArea: therapeuticArea,
@@ -106,6 +129,9 @@ public class MarketAnalysisController : ControllerBase
 
             response.Id = analysis.Id.ToString();
 
+            // ✅ 4. Add uploaded files info to response
+            response.UploadedFiles = uploadedFileUrls;  // ✨ الملفات مع الـ URLs
+
             var responseJson = JsonSerializer.Serialize(response);
             analysis.SetResponse(responseJson);
 
@@ -116,7 +142,9 @@ public class MarketAnalysisController : ControllerBase
 
             await _analysisRepository.AddAsync(analysis);
 
-            _logger.LogInformation("Analysis created: {AnalysisId}", analysis.Id);
+            _logger.LogInformation(
+                "Analysis created: {AnalysisId} with {FileCount} files",
+                analysis.Id, uploadedFileUrls.Count);
 
             return Ok(response);
         }
@@ -181,7 +209,7 @@ public class MarketAnalysisController : ControllerBase
         }
     }
 
-    // ========== Generate Comprehensive Response ==========
+    // ========== Helper Method ==========
 
     private GenerateMarketAnalysisResponse GenerateComprehensiveResponse(
         string therapeuticArea,
@@ -219,11 +247,7 @@ public class MarketAnalysisController : ControllerBase
                 KeyTrends = new List<string>
                 {
                     "Explosive demand for weight loss indications driving 300%+ prescription growth",
-                    "Supply chain constraints limiting market penetration despite unprecedented demand",
-                    "Dual agonists (GLP-1/GIP) showing superior efficacy vs. single-target therapies",
-                    "Oral formulations in development to compete with injectable dominance",
-                    "Cardiovascular outcome trials establishing new standard of care",
-                    "Payer coverage expanding from 25% to 80%+ of commercial plans in 24 months"
+                    "Supply chain constraints limiting market penetration despite unprecedented demand"
                 }
             },
 
@@ -234,18 +258,11 @@ public class MarketAnalysisController : ControllerBase
                 {
                     new RevenueProjectionDto { Year = "2024", Amount = "$24.8 billion" },
                     new RevenueProjectionDto { Year = "2025", Amount = "$35.2 billion" },
-                    new RevenueProjectionDto { Year = "2026", Amount = "$48.7 billion" },
-                    new RevenueProjectionDto { Year = "2027", Amount = "$65.3 billion" },
-                    new RevenueProjectionDto { Year = "2028", Amount = "$82.1 billion" },
                     new RevenueProjectionDto { Year = "2030", Amount = "$110+ billion" }
                 },
                 KeyDrivers = new List<string>
                 {
-                    "Obesity indication approval expanding addressable market from 37M to 400M+ patients globally",
-                    "Cardiovascular benefits driving guideline updates and first-line therapy positioning",
-                    "Medicare coverage expansion following IRA obesity drug provisions",
-                    "International market penetration (China, Japan, EU) accelerating post-2025",
-                    "Combination therapies and next-gen molecules entering late-stage development"
+                    "Obesity indication approval expanding addressable market"
                 }
             },
 
@@ -254,16 +271,9 @@ public class MarketAnalysisController : ControllerBase
                 new CompetitorDto
                 {
                     Name = "Novo Nordisk",
-                    Product = "Ozempic/Wegovy (Semaglutide)",
-                    Mechanism = "GLP-1 receptor agonist, weekly subcutaneous injection",
-                    Status = "Market Leader - 45% market share, $21B annual revenue (2024)"
-                },
-                new CompetitorDto
-                {
-                    Name = "Eli Lilly",
-                    Product = "Mounjaro/Zepbound (Tirzepatide)",
-                    Mechanism = "Dual GLP-1/GIP receptor agonist, weekly injection",
-                    Status = "Fast Follower - 30% market share, superior efficacy (22.5% weight loss), fastest-growing"
+                    Product = "Ozempic/Wegovy",
+                    Mechanism = "GLP-1 receptor agonist",
+                    Status = "Market Leader - 45% market share"
                 }
             },
 
@@ -271,10 +281,10 @@ public class MarketAnalysisController : ControllerBase
             {
                 new ScientificEvidenceDto
                 {
-                    Title = "Semaglutide and cardiovascular outcomes in patients with obesity",
+                    Title = "Semaglutide and cardiovascular outcomes",
                     Source = "PubMed (2023)",
                     Url = "https://pubmed.ncbi.nlm.nih.gov/37622680/",
-                    Summary = "SELECT trial: 17,604 patients, 20% reduction in major adverse cardiovascular events (MACE)"
+                    Summary = "SELECT trial: 20% reduction in MACE"
                 }
             },
 
@@ -282,92 +292,44 @@ public class MarketAnalysisController : ControllerBase
             {
                 Swot = new SWOTDto
                 {
-                    Strengths = new List<string>
-                    {
-                        "Unprecedented clinical efficacy: 15-22% weight loss, superior to all previous obesity therapies",
-                        "Proven cardiovascular benefits creating compelling value proposition for payers",
-                        "Strong patent protection through 2031-2033 for leading products"
-                    },
-                    Weaknesses = new List<string>
-                    {
-                        "Supply constraints limiting revenue potential by estimated $15-20B annually",
-                        "High pricing ($12,000-18,000/year) creating access barriers and payer pushback",
-                        "Injectable delivery limiting patient acceptance vs. oral alternatives"
-                    },
-                    Opportunities = new List<string>
-                    {
-                        "Obesity market expansion: 400M+ eligible patients globally vs. 37M diabetes patients",
-                        "Oral formulations in development could expand market by 40-50%",
-                        "Combination therapies with SGLT2 inhibitors showing additive benefits"
-                    },
-                    Threats = new List<string>
-                    {
-                        "Payer restrictions intensifying: prior authorization, step therapy, BMI thresholds",
-                        "Political pressure on pricing, potential Medicare negotiation inclusion",
-                        "Next-generation competitors (oral, monthly dosing) entering market 2025-2027"
-                    }
+                    Strengths = new List<string> { "Unprecedented clinical efficacy" },
+                    Weaknesses = new List<string> { "Supply constraints" },
+                    Opportunities = new List<string> { "Obesity market expansion" },
+                    Threats = new List<string> { "Payer restrictions" }
                 },
                 Regulatory = new RegulatoryDto
                 {
-                    ApprovalPathways = new List<string>
-                    {
-                        "FDA: Approved for T2D (2017), obesity (2021), cardiovascular risk reduction (2023)",
-                        "EMA: Approved across all indications, expanding to additional EU markets"
-                    },
-                    KeyRegulations = new List<string>
-                    {
-                        "FDA REMS program not required, but post-marketing surveillance ongoing",
-                        "IRA impact: Potential Medicare price negotiation starting 2026-2027"
-                    },
-                    UpcomingChanges = new List<string>
-                    {
-                        "FDA considering expanded cardiovascular indications (heart failure, CKD)",
-                        "Medicare Part D obesity coverage expansion under IRA provisions (2025)"
-                    }
+                    ApprovalPathways = new List<string> { "FDA: Approved for T2D (2017)" },
+                    KeyRegulations = new List<string> { "FDA REMS program" },
+                    UpcomingChanges = new List<string> { "Medicare expansion" }
                 },
                 Reimbursement = new ReimbursementDto
                 {
-                    PayerLandscape = new List<string>
-                    {
-                        "Commercial insurance: 80%+ plans now covering with prior authorization",
-                        "Medicare Part D: Currently excluded for obesity, diabetes coverage only"
-                    },
-                    PricingModels = new List<string>
-                    {
-                        "List price: $1,000-1,500/month ($12,000-18,000/year)",
-                        "Net price (post-rebate): $800-1,100/month estimated"
-                    },
-                    AccessBarriers = new List<string>
-                    {
-                        "Prior authorization requirements: 90%+ of plans require",
-                        "BMI thresholds: Typically BMI ≥30 or ≥27 with comorbidities"
-                    }
+                    PayerLandscape = new List<string> { "Commercial insurance: 80%+ coverage" },
+                    PricingModels = new List<string> { "List price: $1,000-1,500/month" },
+                    AccessBarriers = new List<string> { "Prior authorization required" }
                 },
                 StrategicRecommendations = new List<string>
                 {
-                    "**Manufacturing Scale-Up**: Invest $5-10B in production capacity to meet demand",
-                    "**Payer Partnerships**: Develop outcomes-based contracts demonstrating ROI",
-                    "**Oral Formulation Development**: Accelerate oral GLP-1 programs"
+                    "Manufacturing Scale-Up"
                 }
             },
 
             Risks = new List<string>
             {
-                "**Supply Chain Disruption**: Current manufacturing constraints could persist through 2025",
-                "**Regulatory Safety Signals**: Ongoing monitoring for thyroid cancer, pancreatitis",
-                "**Payer Backlash**: Aggressive prior authorization could limit market access by 30-40%"
+                "Supply Chain Disruption"
             },
 
             Triangulation = new TriangulationDto
             {
                 Score = 0.92,
-                Methodology = "Strategic Triangulation: Live PubMed/ClinicalTrials data analyzed by Gemini AI",
+                Methodology = "Strategic Triangulation",
                 Points = new List<TriangulationPointDto>
                 {
                     new TriangulationPointDto
                     {
-                        Claim = "GLP-1 agonist market will exceed $100B by 2030 with 25-30% CAGR",
-                        Sources = new List<string> { "Industry Reports", "Company Guidance" },
+                        Claim = "Market will exceed $100B by 2030",
+                        Sources = new List<string> { "Industry Reports" },
                         Confidence = 0.95,
                         Status = "verified"
                     }
