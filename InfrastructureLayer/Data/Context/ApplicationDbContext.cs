@@ -28,8 +28,13 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.TherapeuticArea).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Product).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Indication).IsRequired().HasMaxLength(200);
-            entity.Property(e => e.Geography).IsRequired().HasMaxLength(100);
-            entity.Property(e => e.ResearchDepth).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.TargetGeographyJson)
+          .HasColumnName("TargetGeography")
+          .HasColumnType("nvarchar(max)");
+
+            entity.Property(e => e.ResearchDepthJson)
+                  .HasColumnName("ResearchDepth")
+                  .HasColumnType("nvarchar(max)");
             entity.Property(e => e.Status).IsRequired().HasMaxLength(50);
             entity.Property(e => e.ResponseJson).HasColumnType("nvarchar(max)");
             entity.Property(e => e.FileIdsJson).HasColumnType("nvarchar(max)");

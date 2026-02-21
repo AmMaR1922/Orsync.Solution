@@ -175,11 +175,20 @@ using Microsoft.AspNetCore.Http.Features; // لازم لـ FormOptions
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Services
-builder.Services.AddControllers();
+
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(
+            new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+    });
+
 builder.Services.AddEndpointsApiExplorer();
 
 // إضافة البنية التحتية
@@ -273,6 +282,8 @@ if (true)
         c.RoutePrefix = string.Empty;
     });
 }
+
+
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
