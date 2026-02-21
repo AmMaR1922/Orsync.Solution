@@ -224,19 +224,19 @@
 //        }
 //    }
 //}using ApplicationLayer.Contracts.DTOs;
+#region MyRegion
 using ApplicationLayer.Contracts.DTOs;
 using ApplicationLayer.Interfaces.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using System.Net.Http.Headers;
+using System.Text.Json;
 
 namespace InfrastructureLayer.Services;
 
 public class MLApiService : IMLApiService
 {
     private readonly HttpClient _httpClient;
-    private readonly IConfiguration _configuration;
     private readonly ILogger<MLApiService> _logger;
     private readonly string _mlApiBaseUrl;
     private readonly string? _mlApiKey;
@@ -247,15 +247,14 @@ public class MLApiService : IMLApiService
         ILogger<MLApiService> logger)
     {
         _httpClient = httpClient;
-        _configuration = configuration;
         _logger = logger;
 
-        _mlApiBaseUrl = _configuration["MLApi:BaseUrl"]
+        _mlApiBaseUrl = configuration["MLApi:BaseUrl"]
             ?? throw new InvalidOperationException("MLApi:BaseUrl not configured");
 
-        _mlApiKey = _configuration["MLApi:ApiKey"];
+        _mlApiKey = configuration["MLApi:ApiKey"];
 
-        if (int.TryParse(_configuration["MLApi:TimeoutSeconds"], out int timeout))
+        if (int.TryParse(configuration["MLApi:TimeoutSeconds"], out int timeout))
             _httpClient.Timeout = TimeSpan.FromSeconds(timeout);
     }
 
@@ -272,10 +271,7 @@ public class MLApiService : IMLApiService
 
         using var form = new MultipartFormDataContent();
 
-        // ✅ Add normal fields
         form.Add(new StringContent(request.TherapeuticArea ?? string.Empty), "therapeutic_area");
-        form.Add(new StringContent(request.TargetGeography ?? string.Empty), "target_geography");
-        form.Add(new StringContent(request.ResearchDepth ?? "standard"), "research_depth");
 
         if (!string.IsNullOrWhiteSpace(request.SpecificProduct))
             form.Add(new StringContent(request.SpecificProduct), "specific_product");
@@ -283,29 +279,25 @@ public class MLApiService : IMLApiService
         if (!string.IsNullOrWhiteSpace(request.Indication))
             form.Add(new StringContent(request.Indication), "indication");
 
-        // ✅ Handle Files (Download from URL and send as bytes)
+        form.Add(new StringContent(
+            request.TargetGeography?.FirstOrDefault() ?? "Global"),
+            "target_geography");
+
+        form.Add(new StringContent(
+            request.ResearchDepth?.FirstOrDefault() ?? "standard"),
+            "research_depth");
+
         if (request.Files != null && request.Files.Any())
         {
             foreach (var file in request.Files)
             {
-                if (string.IsNullOrWhiteSpace(file.FileUrl))
-                    continue;
+                var fileBytes = await _httpClient.GetByteArrayAsync(file.FileUrl, cancellationToken);
 
-                try
-                {
-                    var fileBytes = await _httpClient.GetByteArrayAsync(file.FileUrl, cancellationToken);
+                var fileContent = new ByteArrayContent(fileBytes);
+                fileContent.Headers.ContentType =
+                    new MediaTypeHeaderValue("application/octet-stream");
 
-                    var fileContent = new ByteArrayContent(fileBytes);
-                    fileContent.Headers.ContentType =
-                        new MediaTypeHeaderValue("application/octet-stream");
-
-                    form.Add(fileContent, "files", file.FileName);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex,
-                        "Failed to download file from URL: {FileUrl}", file.FileUrl);
-                }
+                form.Add(fileContent, "files", file.FileName);
             }
         }
 
@@ -315,19 +307,17 @@ public class MLApiService : IMLApiService
         var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogError("ML API ERROR: {StatusCode}", response.StatusCode);
-            _logger.LogError(responseContent);
+            throw new Exception($"ML API Error: {responseContent}");
 
-            throw new HttpRequestException(
-                $"ML API failed with status {response.StatusCode}: {responseContent}");
-        }
+        var result = JsonSerializer.Deserialize<GenerateMarketAnalysisResponse>(
+            responseContent,
+            new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            }
+        );
 
-        var result =
-            JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(responseContent)
-            ?? throw new InvalidOperationException("Failed to deserialize ML API response");
-
-        return result;
+        return result!;
     }
 
     public async Task<bool> HealthCheckAsync()
@@ -343,3 +333,5 @@ public class MLApiService : IMLApiService
         }
     }
 }
+
+#endregion

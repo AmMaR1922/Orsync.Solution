@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace InfrastructureLayer.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260220190641_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20260221181349_CreateAnalysisTable")]
+    partial class CreateAnalysisTable
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -35,13 +35,13 @@ namespace InfrastructureLayer.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("FileIdsJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("FileIds");
 
-                    b.Property<string>("Geography")
+                    b.Property<string>("GeographyJson")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("Geography");
 
                     b.Property<string>("Indication")
                         .IsRequired()
@@ -53,10 +53,10 @@ namespace InfrastructureLayer.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<string>("ResearchDepth")
+                    b.Property<string>("ResearchDepthJson")
                         .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("ResearchDepth");
 
                     b.Property<string>("ResponseJson")
                         .IsRequired()
@@ -130,6 +130,8 @@ namespace InfrastructureLayer.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BatchId");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("UploadedFiles", (string)null);
                 });

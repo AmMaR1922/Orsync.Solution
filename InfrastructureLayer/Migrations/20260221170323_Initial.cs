@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace InfrastructureLayer.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialCreate : Migration
+    public partial class Initial : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -20,11 +20,11 @@ namespace InfrastructureLayer.Migrations
                     TherapeuticArea = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     Product = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     Indication = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Geography = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    ResearchDepth = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Geography = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ResearchDepth = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                     ResponseJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    FileIdsJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    FileIds = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
@@ -255,6 +255,11 @@ namespace InfrastructureLayer.Migrations
                 name: "IX_UploadedFiles_BatchId",
                 table: "UploadedFiles",
                 column: "BatchId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_UploadedFiles_UserId",
+                table: "UploadedFiles",
+                column: "UserId");
         }
 
         /// <inheritdoc />

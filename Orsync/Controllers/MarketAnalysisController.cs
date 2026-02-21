@@ -538,7 +538,6 @@
 //        }
 //    }
 //}
-
 using ApplicationLayer.Contracts.DTOs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
@@ -547,9 +546,9 @@ using DomainLayer.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
-using System.Runtime.Serialization;
 using System.Security.Claims;
-using static ApplicationLayer.Contracts.DTOs.GenerateMarketAnalysisResponse;
+using System.Text.Json;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace Orsync.Controllers;
 
@@ -563,22 +562,19 @@ public class MarketAnalysisController : ControllerBase
     private readonly IFileStorageService _fileStorageService;
     private readonly IMLApiService _mlApiService;
     private readonly ILogger<MarketAnalysisController> _logger;
-    private readonly IConfiguration _configuration;
 
     public MarketAnalysisController(
         IAnalysisRepository analysisRepository,
         IUploadedFileRepository fileRepository,
         IFileStorageService fileStorageService,
         IMLApiService mlApiService,
-        ILogger<MarketAnalysisController> logger,
-        IConfiguration configuration)
+        ILogger<MarketAnalysisController> logger)
     {
         _analysisRepository = analysisRepository;
         _fileRepository = fileRepository;
         _fileStorageService = fileStorageService;
         _mlApiService = mlApiService;
         _logger = logger;
-        _configuration = configuration;
     }
 
     private string GetUserId()
@@ -594,38 +590,26 @@ public class MarketAnalysisController : ControllerBase
     [HttpPost("generate")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(100_000_000)]
-    [ProducesResponseType(typeof(GenerateMarketAnalysisResponse), 200)]
     public async Task<IActionResult> Generate(
         [FromForm] string therapeuticArea,
         [FromForm] string? product,
         [FromForm] string? indication,
-
-        // ✅ Multi Select Enum
         [FromForm] List<TargetGeography> geography,
-
-        // ✅ Multi Select Enum
         [FromForm] List<ResearchDepth> researchDepth,
-
         [FromForm] List<IFormFile>? files)
     {
         try
         {
-            _logger.LogInformation("========== NEW GENERATE REQUEST ==========");
-
-            // ================= VALIDATION =================
-
             if (string.IsNullOrWhiteSpace(therapeuticArea))
                 return BadRequest("TherapeuticArea is required");
 
-            if (geography == null || !geography.Any())
+            if (!geography.Any())
                 return BadRequest("At least one Geography must be selected");
 
-            if (researchDepth == null || !researchDepth.Any())
+            if (!researchDepth.Any())
                 return BadRequest("At least one ResearchDepth must be selected");
 
             var userId = GetUserId();
-
-            // ================= FILE UPLOAD =================
 
             var mlApiFiles = new List<MLApiFileDto>();
             var fileIds = new List<Guid>();
@@ -634,14 +618,9 @@ public class MarketAnalysisController : ControllerBase
             {
                 var batchId = Guid.NewGuid();
 
-                foreach (var file in files)
+                foreach (var file in files.Where(f => f.Length > 0))
                 {
-                    if (file.Length == 0)
-                        continue;
-
-                    _logger.LogInformation("Uploading File: {FileName}", file.FileName);
-
-                    var memoryStream = new MemoryStream();
+                    using var memoryStream = new MemoryStream();
                     await file.CopyToAsync(memoryStream);
                     memoryStream.Position = 0;
 
@@ -650,8 +629,6 @@ public class MarketAnalysisController : ControllerBase
                         file.FileName,
                         file.ContentType
                     );
-
-                    memoryStream.Dispose();
 
                     var uploadedFile = new UploadedFile(
                         userId,
@@ -677,86 +654,44 @@ public class MarketAnalysisController : ControllerBase
                 }
             }
 
-            // ================= CALL ML API =================
-
             var mlApiRequest = new MLApiRequestDto
             {
                 TherapeuticArea = therapeuticArea.Trim(),
                 SpecificProduct = product?.Trim(),
                 Indication = indication?.Trim(),
-
-                // ✅ Convert Enum List → String
-                ////TargetGeography = string.Join(",", geography
-                ////         .Select(g => g.ToString().ToLower())),
-
-                //TargetGeography = string.Join(",",
-                //        geography.Select(g =>
-                //            g.GetType()
-                //             .GetField(g.ToString())
-                //             ?.GetCustomAttributes(typeof(EnumMemberAttribute), false)
-                //             .Cast<EnumMemberAttribute>()
-                //             .FirstOrDefault()?.Value ?? g.ToString()
-                //        )
-                //    ),
-
-                ////ResearchDepth = string.Join(",", researchDepth
-                ////.Select(r => r.ToString().ToLower())),
-
-                //                ResearchDepth = string.Join(",",
-                //    researchDepth.Select(r =>
-                //        r.GetType()
-                //         .GetField(r.ToString())
-                //         ?.GetCustomAttributes(typeof(EnumMemberAttribute), false)
-                //         .Cast<EnumMemberAttribute>()
-                //         .FirstOrDefault()?.Value ?? r.ToString()
-                //    )
-                //),
-
-                                                            TargetGeography = geography
-                                                .FirstOrDefault()
-                                                   .ToString(),
-
-                                                            ResearchDepth = researchDepth
-                                                .FirstOrDefault()
-                                                   .ToString(),
-                                                            Files = mlApiFiles
-                                                        };
-
-            _logger.LogInformation("Calling ML API...");
+                TargetGeography = geography.Select(g => g.ToString()).ToList(),
+                ResearchDepth = researchDepth.Select(d => d.ToString().ToLower()).ToList(),
+                Files = mlApiFiles
+            };
 
             var mlResponse = await _mlApiService.GenerateAnalysisAsync(mlApiRequest);
 
-            // Attach uploaded files to response
-            mlResponse.UploadedFiles = mlApiFiles.Select(f => new UploadedFileUrlDto
-            {
-                FileId = f.FileId,
-                FileName = f.FileName,
-                FileUrl = f.FileUrl,
-                FileSize = f.FileSize,
-                FileExtension = f.FileExtension
-            }).ToList();
-
-            // ================= SAVE TO DB =================
+            mlResponse.UploadedFiles = mlApiFiles
+                .Select(f => new UploadedFileUrlDto
+                {
+                    FileId = f.FileId,
+                    FileName = f.FileName,
+                    FileUrl = f.FileUrl,
+                    FileSize = f.FileSize,
+                    FileExtension = f.FileExtension
+                }).ToList();
 
             var analysis = new Analysis(
                 userId,
                 therapeuticArea.Trim(),
                 product ?? "General",
                 indication ?? "General",
-
                 geography,
                 researchDepth
             );
 
-            var responseJson = JsonConvert.SerializeObject(mlResponse);
+            var responseJson = JsonSerializer.Serialize(mlResponse);
             analysis.SetResponse(responseJson);
 
             if (fileIds.Any())
                 analysis.SetFileIds(fileIds);
 
             await _analysisRepository.AddAsync(analysis);
-
-            _logger.LogInformation("Analysis saved successfully");
 
             return Ok(mlResponse);
         }
@@ -767,30 +702,8 @@ public class MarketAnalysisController : ControllerBase
             return StatusCode(500, new
             {
                 error = "Internal Server Error",
-                details = ex.Message
+                message = ex.Message
             });
-        }
-    }
-
-    // ============================================================
-    // ✅ TEST ML API
-    // ============================================================
-
-    [HttpGet("test-ml-api")]
-    public async Task<IActionResult> TestMLApi()
-    {
-        try
-        {
-            var isHealthy = await _mlApiService.HealthCheckAsync();
-
-            if (!isHealthy)
-                return StatusCode(503, new { status = "ML API unhealthy" });
-
-            return Ok(new { status = "ML API is healthy" });
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(502, new { error = ex.Message });
         }
     }
 
@@ -802,11 +715,11 @@ public class MarketAnalysisController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         var userId = GetUserId();
-
         var analyses = await _analysisRepository.GetByUserIdAsync(userId);
 
         var responses = analyses
-            .Select(a => JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(a.ResponseJson))
+            .Where(a => !string.IsNullOrWhiteSpace(a.ResponseJson))
+            .Select(a => JsonSerializer.Deserialize<GenerateMarketAnalysisResponse>(a.ResponseJson))
             .Where(r => r != null)
             .ToList();
 
@@ -814,15 +727,44 @@ public class MarketAnalysisController : ControllerBase
     }
 
     // ============================================================
-    // ✅ GET BY ID
+    // ✅ GET BY ID (Guid أو ML Id)
+    // ============================================================
+    // ============================================================
+    // ✅ SHARED FIND METHOD
+    // ============================================================
+
+    private async Task<Analysis?> FindAnalysisAsync(string id, string userId)
+    {
+        Analysis? analysis = null;
+
+        // لو Guid
+        if (Guid.TryParse(id, out var guidId))
+        {
+            analysis = await _analysisRepository.GetByIdAsync(guidId);
+        }
+        else
+        {
+            var analyses = await _analysisRepository.GetByUserIdAsync(userId);
+
+            analysis = analyses.FirstOrDefault(a =>
+                !string.IsNullOrWhiteSpace(a.ResponseJson) &&
+                a.ResponseJson.Contains($"\"id\":\"{id}\""));
+        }
+
+        return analysis;
+    }
+
+
+    // ============================================================
+    // ✅ GET BY ID (Guid or ML Report Id)
     // ============================================================
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetById(Guid id)
+    public async Task<IActionResult> GetById(string id)
     {
         var userId = GetUserId();
 
-        var analysis = await _analysisRepository.GetByIdAsync(id);
+        var analysis = await FindAnalysisAsync(id, userId);
 
         if (analysis == null)
             return NotFound();
@@ -836,16 +778,17 @@ public class MarketAnalysisController : ControllerBase
         return Ok(response);
     }
 
+
     // ============================================================
-    // ✅ DELETE
+    // ✅ DELETE (Guid or ML Report Id)
     // ============================================================
 
     [HttpDelete("{id}")]
-    public async Task<IActionResult> Delete(Guid id)
+    public async Task<IActionResult> Delete(string id)
     {
         var userId = GetUserId();
 
-        var analysis = await _analysisRepository.GetByIdAsync(id);
+        var analysis = await FindAnalysisAsync(id, userId);
 
         if (analysis == null)
             return NotFound();
@@ -853,7 +796,7 @@ public class MarketAnalysisController : ControllerBase
         if (analysis.UserId != userId)
             return Forbid();
 
-        await _analysisRepository.DeleteAsync(id);
+        await _analysisRepository.DeleteAsync(analysis.Id);
 
         return Ok(new { message = "Deleted successfully" });
     }

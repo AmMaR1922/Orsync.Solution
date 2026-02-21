@@ -1,10 +1,9 @@
 ﻿using System.Text.Json.Serialization;
-using DomainLayer.Enums;
 
 namespace ApplicationLayer.Contracts.DTOs;
 
 /// <summary>
-/// ✨ الـ Response الرئيسي - ده اللي بيرجع للـ User
+/// ✨ الـ Response الرئيسي
 /// </summary>
 public class GenerateMarketAnalysisResponse
 {
@@ -23,16 +22,8 @@ public class GenerateMarketAnalysisResponse
     [JsonPropertyName("generated_by")]
     public List<string> GeneratedBy { get; set; } = new();
 
-    // ========================================
-    // ✨ الملفات المرفوعة
-    // ========================================
-
     [JsonPropertyName("uploaded_files")]
     public List<UploadedFileUrlDto> UploadedFiles { get; set; } = new();
-
-    // ========================================
-    // ✨ Sections
-    // ========================================
 
     [JsonPropertyName("executive_summary")]
     public string ExecutiveSummary { get; set; } = string.Empty;
@@ -59,7 +50,9 @@ public class GenerateMarketAnalysisResponse
     public TriangulationDto Triangulation { get; set; } = new();
 }
 
-#region ===== INPUT =====
+// ========================================
+// ✅ INPUT - استقبل strings مش enums
+// ========================================
 
 public class InputDataDto
 {
@@ -72,18 +65,18 @@ public class InputDataDto
     [JsonPropertyName("indication")]
     public string Indication { get; set; } = string.Empty;
 
-    // ✅ Multi Select Enum
+    // ✅ Changed to string - ML API returns string
     [JsonPropertyName("geography")]
-    public List<TargetGeography> Geography { get; set; } = new();
+    public string Geography { get; set; } = string.Empty;
 
-    // ✅ Multi Select Enum
+    // ✅ Changed to string - ML API returns string
     [JsonPropertyName("depth")]
-    public List<ResearchDepth> Depth { get; set; } = new();
+    public string Depth { get; set; } = string.Empty;
 }
 
-#endregion
-
-#region ===== FILES =====
+// ========================================
+// FILES
+// ========================================
 
 public class UploadedFileUrlDto
 {
@@ -103,9 +96,9 @@ public class UploadedFileUrlDto
     public string FileExtension { get; set; } = string.Empty;
 }
 
-#endregion
-
-#region ===== MARKET =====
+// ========================================
+// MARKET
+// ========================================
 
 public class MarketOverviewDto
 {
@@ -122,9 +115,9 @@ public class MarketOverviewDto
     public List<string> KeyTrends { get; set; } = new();
 }
 
-#endregion
-
-#region ===== FINANCIAL =====
+// ========================================
+// FINANCIAL
+// ========================================
 
 public class FinancialForecastDto
 {
@@ -147,9 +140,9 @@ public class RevenueProjectionDto
     public string Amount { get; set; } = string.Empty;
 }
 
-#endregion
-
-#region ===== COMPETITORS =====
+// ========================================
+// COMPETITORS
+// ========================================
 
 public class CompetitorDto
 {
@@ -166,9 +159,9 @@ public class CompetitorDto
     public string Status { get; set; } = string.Empty;
 }
 
-#endregion
-
-#region ===== SCIENTIFIC =====
+// ========================================
+// SCIENTIFIC
+// ========================================
 
 public class ScientificEvidenceDto
 {
@@ -185,9 +178,9 @@ public class ScientificEvidenceDto
     public string Summary { get; set; } = string.Empty;
 }
 
-#endregion
-
-#region ===== AI INSIGHTS =====
+// ========================================
+// AI INSIGHTS
+// ========================================
 
 public class AIInsightsDto
 {
@@ -243,9 +236,9 @@ public class ReimbursementDto
     public List<string> AccessBarriers { get; set; } = new();
 }
 
-#endregion
-
-#region ===== TRIANGULATION =====
+// ========================================
+// TRIANGULATION
+// ========================================
 
 public class TriangulationDto
 {
@@ -273,5 +266,3 @@ public class TriangulationPointDto
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 }
-
-#endregion

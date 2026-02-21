@@ -13,13 +13,13 @@ public class MLApiRequestDto
     [JsonProperty("indication")]
     public string? Indication { get; set; }
 
-    // ✅ رجعناه string مش List
+   
     [JsonProperty("target_geography")]
-    public string TargetGeography { get; set; } = string.Empty;
+    public List<string> TargetGeography { get; set; } = new();
 
-    // ✅ برضه string
     [JsonProperty("research_depth")]
-    public string ResearchDepth { get; set; } = "standard";
+    public List<string> ResearchDepth { get; set; } = new();
+
 
     [JsonProperty("files")]
     public List<MLApiFileDto> Files { get; set; } = new();

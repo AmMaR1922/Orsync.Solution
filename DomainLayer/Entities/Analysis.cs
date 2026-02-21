@@ -1,4 +1,88 @@
-﻿//using DomainLayer.Common;
+﻿////using DomainLayer.Common;
+////using DomainLayer.Enums;
+////using System.Text.Json;
+
+////namespace DomainLayer.Entities;
+
+////public class Analysis : BaseEntity
+////{
+////    public string UserId { get; private set; } = string.Empty;
+////    public string TherapeuticArea { get; private set; } = string.Empty;
+////    public string Product { get; private set; } = string.Empty;
+////    public string Indication { get; private set; } = string.Empty;
+
+////    // ✅ Multi Select Enums (Stored as JSON)
+////    public string TargetGeographyJson { get; private set; } = "[]";
+////    public string ResearchDepthJson { get; private set; } = "[]";
+
+////    public string Status { get; private set; } = "Processing";
+
+////    // Store complete ML response
+////    public string ResponseJson { get; private set; } = "{}";
+
+////    // File IDs
+////    public string FileIdsJson { get; private set; } = "[]";
+
+////    private Analysis() { }
+
+////    // ✅ Constructor
+////    public Analysis(
+////        string userId,
+////        string therapeuticArea,
+////        string product,
+////        string indication,
+////        List<TargetGeography> geographies,
+////        List<ResearchDepth> researchDepths)
+////    {
+////        UserId = userId;
+////        TherapeuticArea = therapeuticArea;
+////        Product = product;
+////        Indication = indication;
+
+////        // Serialize enums as JSON
+////        TargetGeographyJson = JsonSerializer.Serialize(geographies);
+////        ResearchDepthJson = JsonSerializer.Serialize(researchDepths);
+
+////        Status = "Processing";
+////        CreatedAt = DateTime.UtcNow;
+////    }
+
+////    // =====================================
+////    // ✅ Update Response
+////    // =====================================
+////    public void SetResponse(string responseJson)
+////    {
+////        ResponseJson = responseJson;
+////        Status = "Completed";
+////        UpdatedAt = DateTime.UtcNow;
+////    }
+
+////    // =====================================
+////    // ✅ Store File IDs
+////    // =====================================
+////    public void SetFileIds(List<Guid> fileIds)
+////    {
+////        FileIdsJson = JsonSerializer.Serialize(fileIds);
+////        UpdatedAt = DateTime.UtcNow;
+////    }
+
+////    // =====================================
+////    // ✅ Helpers (Optional – أفضل Practice)
+////    // =====================================
+
+////    public List<TargetGeography> GetGeographies()
+////    {
+////        return JsonSerializer.Deserialize<List<TargetGeography>>(TargetGeographyJson)
+////               ?? new List<TargetGeography>();
+////    }
+
+////    public List<ResearchDepth> GetResearchDepths()
+////    {
+////        return JsonSerializer.Deserialize<List<ResearchDepth>>(ResearchDepthJson)
+////               ?? new List<ResearchDepth>();
+////    }
+////}using DomainLayer.Common;
+//using DomainLayer.Common;
 //using DomainLayer.Enums;
 //using System.Text.Json;
 
@@ -6,26 +90,38 @@
 
 //public class Analysis : BaseEntity
 //{
+//    // =========================
+//    // Basic Info
+//    // =========================
+
 //    public string UserId { get; private set; } = string.Empty;
 //    public string TherapeuticArea { get; private set; } = string.Empty;
 //    public string Product { get; private set; } = string.Empty;
 //    public string Indication { get; private set; } = string.Empty;
 
-//    // ✅ Multi Select Enums (Stored as JSON)
+//    // =========================
+//    // Multi Select Stored as JSON
+//    // =========================
+
 //    public string TargetGeographyJson { get; private set; } = "[]";
 //    public string ResearchDepthJson { get; private set; } = "[]";
 
+//    // =========================
+//    // Status + Results
+//    // =========================
+
 //    public string Status { get; private set; } = "Processing";
 
-//    // Store complete ML response
 //    public string ResponseJson { get; private set; } = "{}";
 
-//    // File IDs
 //    public string FileIdsJson { get; private set; } = "[]";
+
+//    // ============================================================
+//    // Constructor (✔ FIXED – Accepts Lists Not Strings)
+//    // ============================================================
 
 //    private Analysis() { }
 
-//    // ✅ Constructor
 //    public Analysis(
 //        string userId,
 //        string therapeuticArea,
@@ -39,7 +135,7 @@
 //        Product = product;
 //        Indication = indication;
 
-//        // Serialize enums as JSON
+//        // 🔥 Store enums as JSON
 //        TargetGeographyJson = JsonSerializer.Serialize(geographies);
 //        ResearchDepthJson = JsonSerializer.Serialize(researchDepths);
 
@@ -47,9 +143,10 @@
 //        CreatedAt = DateTime.UtcNow;
 //    }
 
-//    // =====================================
-//    // ✅ Update Response
-//    // =====================================
+//    // ============================================================
+//    // Methods
+//    // ============================================================
+
 //    public void SetResponse(string responseJson)
 //    {
 //        ResponseJson = responseJson;
@@ -57,31 +154,15 @@
 //        UpdatedAt = DateTime.UtcNow;
 //    }
 
-//    // =====================================
-//    // ✅ Store File IDs
-//    // =====================================
 //    public void SetFileIds(List<Guid> fileIds)
 //    {
 //        FileIdsJson = JsonSerializer.Serialize(fileIds);
 //        UpdatedAt = DateTime.UtcNow;
 //    }
+//}
 
-//    // =====================================
-//    // ✅ Helpers (Optional – أفضل Practice)
-//    // =====================================
 
-//    public List<TargetGeography> GetGeographies()
-//    {
-//        return JsonSerializer.Deserialize<List<TargetGeography>>(TargetGeographyJson)
-//               ?? new List<TargetGeography>();
-//    }
 
-//    public List<ResearchDepth> GetResearchDepths()
-//    {
-//        return JsonSerializer.Deserialize<List<ResearchDepth>>(ResearchDepthJson)
-//               ?? new List<ResearchDepth>();
-//    }
-//}using DomainLayer.Common;
 using DomainLayer.Common;
 using DomainLayer.Enums;
 using System.Text.Json;
@@ -90,62 +171,51 @@ namespace DomainLayer.Entities;
 
 public class Analysis : BaseEntity
 {
-    // =========================
-    // Basic Info
-    // =========================
+    public string UserId { get; private set; }
+    public string TherapeuticArea { get; private set; }
+    public string Product { get; private set; }
+    public string Indication { get; private set; }
 
-    public string UserId { get; private set; } = string.Empty;
-    public string TherapeuticArea { get; private set; } = string.Empty;
-    public string Product { get; private set; } = string.Empty;
-    public string Indication { get; private set; } = string.Empty;
+    // ✅ خزن كـ JSON string بدل List
+    public string GeographyJson { get; private set; }
+    public string ResearchDepthJson { get; private set; }
 
-    // =========================
-    // Multi Select Stored as JSON
-    // =========================
+    public string Status { get; private set; }
+    public string ResponseJson { get; private set; }
+    public string? FileIdsJson { get; private set; }
 
-    public string TargetGeographyJson { get; private set; } = "[]";
-    public string ResearchDepthJson { get; private set; } = "[]";
-
-    // =========================
-    // Status + Results
-    // =========================
-
-    public string Status { get; private set; } = "Processing";
-
-    public string ResponseJson { get; private set; } = "{}";
-
-    public string FileIdsJson { get; private set; } = "[]";
-
-    // ============================================================
-    // Constructor (✔ FIXED – Accepts Lists Not Strings)
-    // ============================================================
-
-    private Analysis() { }
+    // Private constructor for EF Core
+    private Analysis()
+    {
+        UserId = string.Empty;
+        TherapeuticArea = string.Empty;
+        Product = string.Empty;
+        Indication = string.Empty;
+        GeographyJson = string.Empty;
+        ResearchDepthJson = string.Empty;
+        Status = string.Empty;
+        ResponseJson = string.Empty;
+    }
 
     public Analysis(
         string userId,
         string therapeuticArea,
         string product,
         string indication,
-        List<TargetGeography> geographies,
-        List<ResearchDepth> researchDepths)
+        List<TargetGeography> geography,
+        List<ResearchDepth> researchDepth)
     {
         UserId = userId;
         TherapeuticArea = therapeuticArea;
         Product = product;
         Indication = indication;
-
-        // 🔥 Store enums as JSON
-        TargetGeographyJson = JsonSerializer.Serialize(geographies);
-        ResearchDepthJson = JsonSerializer.Serialize(researchDepths);
-
         Status = "Processing";
-        CreatedAt = DateTime.UtcNow;
-    }
+        ResponseJson = string.Empty;
 
-    // ============================================================
-    // Methods
-    // ============================================================
+        // ✅ Serialize enums to JSON
+        GeographyJson = JsonSerializer.Serialize(geography);
+        ResearchDepthJson = JsonSerializer.Serialize(researchDepth);
+    }
 
     public void SetResponse(string responseJson)
     {
@@ -158,5 +228,33 @@ public class Analysis : BaseEntity
     {
         FileIdsJson = JsonSerializer.Serialize(fileIds);
         UpdatedAt = DateTime.UtcNow;
+    }
+
+    // ✅ Helper methods to get original enums
+    public List<TargetGeography> GetGeography()
+    {
+        if (string.IsNullOrWhiteSpace(GeographyJson))
+            return new List<TargetGeography>();
+
+        return JsonSerializer.Deserialize<List<TargetGeography>>(GeographyJson)
+            ?? new List<TargetGeography>();
+    }
+
+    public List<ResearchDepth> GetResearchDepth()
+    {
+        if (string.IsNullOrWhiteSpace(ResearchDepthJson))
+            return new List<ResearchDepth>();
+
+        return JsonSerializer.Deserialize<List<ResearchDepth>>(ResearchDepthJson)
+            ?? new List<ResearchDepth>();
+    }
+
+    public List<Guid> GetFileIds()
+    {
+        if (string.IsNullOrWhiteSpace(FileIdsJson))
+            return new List<Guid>();
+
+        return JsonSerializer.Deserialize<List<Guid>>(FileIdsJson)
+            ?? new List<Guid>();
     }
 }
