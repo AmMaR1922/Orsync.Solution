@@ -22,6 +22,37 @@ public class GenerateMarketAnalysisResponse
     [JsonPropertyName("generated_by")]
     public List<string> GeneratedBy { get; set; } = new();
 
+
+
+
+
+
+    // ========================================
+    // ✨✨✨ ده الـ DTO الجديد للملفات ✨✨✨
+    // ========================================
+
+    /// <summary>
+    /// معلومات الملف مع URL للـ ML Engineer
+    /// </summary>
+    public class UploadedFileUrlDto
+    {
+        [JsonPropertyName("file_id")]
+        public string FileId { get; set; } = string.Empty;
+
+        [JsonPropertyName("file_name")]
+        public string FileName { get; set; } = string.Empty;
+
+        [JsonPropertyName("file_url")]
+        public string FileUrl { get; set; } = string.Empty;  // ✨ URL المباشر للتحميل
+
+        [JsonPropertyName("file_size")]
+        public long FileSize { get; set; }
+
+        [JsonPropertyName("file_extension")]
+        public string FileExtension { get; set; } = string.Empty;
+    }
+
+
     [JsonPropertyName("executive_summary")]
     public string ExecutiveSummary { get; set; } = string.Empty;
 
@@ -218,29 +249,4 @@ public class TriangulationPointDto
 
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
-}
-
-// ========================================
-// ✨✨✨ ده الـ DTO الجديد للملفات ✨✨✨
-// ========================================
-
-/// <summary>
-/// معلومات الملف مع URL للـ ML Engineer
-/// </summary>
-public class UploadedFileUrlDto
-{
-    [JsonPropertyName("file_id")]
-    public string FileId { get; set; } = string.Empty;
-
-    [JsonPropertyName("file_name")]
-    public string FileName { get; set; } = string.Empty;
-
-    [JsonPropertyName("file_url")]
-    public string FileUrl { get; set; } = string.Empty;  // ✨ URL المباشر للتحميل
-
-    [JsonPropertyName("file_size")]
-    public long FileSize { get; set; }
-
-    [JsonPropertyName("file_extension")]
-    public string FileExtension { get; set; } = string.Empty;
 }

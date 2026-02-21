@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using System.Text.Json;
+using static ApplicationLayer.Contracts.DTOs.GenerateMarketAnalysisResponse;
 
 namespace Orsync.Controllers;
 
@@ -19,7 +20,7 @@ public class MarketAnalysisController : ControllerBase
     private readonly IFileStorageService _fileStorageService;
     private readonly ILogger<MarketAnalysisController> _logger;
     private readonly IConfiguration _configuration;
-
+    
     public MarketAnalysisController(
         IAnalysisRepository analysisRepository,
         IUploadedFileRepository fileRepository,
@@ -33,13 +34,13 @@ public class MarketAnalysisController : ControllerBase
         _logger = logger;
         _configuration = configuration;
     }
-
+    
     private string GetUserId()
     {
         return User.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? throw new UnauthorizedAccessException("User ID not found");
     }
-
+    
     /// <summary>
     /// ✨ THE MAIN ENDPOINT - توليد تحليل سوقي مع رفع ملفات
     /// </summary>
@@ -56,39 +57,39 @@ public class MarketAnalysisController : ControllerBase
         try
         {
             var userId = GetUserId();
-
+            
             _logger.LogInformation(
                 "Generate analysis request from user {UserId} for {Product}",
                 userId, product);
-
+            
             // ✅ 1. Upload files and generate URLs
             var uploadedFileUrls = new List<UploadedFileUrlDto>();
             var fileIds = new List<Guid>();
-
+            
             if (files != null && files.Any())
             {
                 var batchId = Guid.NewGuid();
                 var baseUrl = _configuration["FileStorage:BaseUrl"] ?? Request.Scheme + "://" + Request.Host;
-
+                
                 _logger.LogInformation("Uploading {Count} files", files.Count);
-
+                
                 foreach (var file in files)
                 {
                     if (file.Length == 0) continue;
-
+                    
                     // Upload to storage
                     var memoryStream = new MemoryStream();
                     await file.CopyToAsync(memoryStream);
                     memoryStream.Position = 0;
-
+                    
                     var uploadResult = await _fileStorageService.UploadFileAsync(
                         memoryStream,
                         file.FileName,
                         file.ContentType
                     );
-
+                    
                     memoryStream.Dispose();
-
+                    
                     // Save metadata to DB
                     var uploadedFile = new UploadedFile(
                         userId: userId,
@@ -98,10 +99,10 @@ public class MarketAnalysisController : ControllerBase
                         fileExtension: Path.GetExtension(file.FileName),
                         batchId: batchId
                     );
-
+                    
                     await _fileRepository.AddAsync(uploadedFile);
                     fileIds.Add(uploadedFile.Id);
-
+                    
                     // ✨ Add to URLs list for ML Engineer
                     uploadedFileUrls.Add(new UploadedFileUrlDto
                     {
@@ -113,10 +114,10 @@ public class MarketAnalysisController : ControllerBase
                     });
                 }
             }
-
+            
             // ✅ 2. Generate comprehensive response
             var response = GenerateComprehensiveResponse(therapeuticArea, product, indication, geography);
-
+            
             // ✅ 3. Create Analysis entity
             var analysis = new Analysis(
                 userId: userId,
@@ -126,26 +127,34 @@ public class MarketAnalysisController : ControllerBase
                 geography: geography,
                 researchDepth: "deep_dive"
             );
-
+            
             response.Id = analysis.Id.ToString();
 
             // ✅ 4. Add uploaded files info to response
-            response.UploadedFiles = uploadedFileUrls;  // ✨ الملفات مع الـ URLs
-
+            //response.UploadedFiles = uploadedFileUrls;  // ✨ الملفات مع الـ URLs
+            response.UploadedFiles = uploadedFileUrls
+              .Select(f => new UploadedFileUrlDto
+              {
+                  FileId = f.FileId,
+                  FileName = f.FileName,
+                  FileUrl = f.FileUrl,
+                  FileSize = f.FileSize,
+                  FileExtension = f.FileExtension
+              }).ToList();
             var responseJson = JsonSerializer.Serialize(response);
             analysis.SetResponse(responseJson);
-
+            
             if (fileIds.Any())
             {
                 analysis.SetFileIds(fileIds);
             }
-
+            
             await _analysisRepository.AddAsync(analysis);
-
+            
             _logger.LogInformation(
                 "Analysis created: {AnalysisId} with {FileCount} files",
                 analysis.Id, uploadedFileUrls.Count);
-
+            
             return Ok(response);
         }
         catch (Exception ex)
@@ -154,7 +163,7 @@ public class MarketAnalysisController : ControllerBase
             return StatusCode(500, new { error = ex.Message });
         }
     }
-
+    
     /// <summary>
     /// الحصول على كل التحاليل
     /// </summary>
@@ -165,13 +174,13 @@ public class MarketAnalysisController : ControllerBase
         {
             var userId = GetUserId();
             var analyses = await _analysisRepository.GetByUserIdAsync(userId);
-
+            
             var responses = analyses.Select(a =>
             {
                 var response = JsonSerializer.Deserialize<GenerateMarketAnalysisResponse>(a.ResponseJson);
                 return response;
             }).ToList();
-
+            
             return Ok(responses);
         }
         catch (Exception ex)
@@ -180,7 +189,7 @@ public class MarketAnalysisController : ControllerBase
             return StatusCode(500, new { error = ex.Message });
         }
     }
-
+    
     /// <summary>
     /// الحصول على تحليل محدد
     /// </summary>
@@ -191,15 +200,15 @@ public class MarketAnalysisController : ControllerBase
         {
             var userId = GetUserId();
             var analysis = await _analysisRepository.GetByIdAsync(id);
-
+            
             if (analysis == null)
                 return NotFound(new { error = "Analysis not found" });
-
+            
             if (analysis.UserId != userId)
                 return Forbid();
-
+            
             var response = JsonSerializer.Deserialize<GenerateMarketAnalysisResponse>(analysis.ResponseJson);
-
+            
             return Ok(response);
         }
         catch (Exception ex)
@@ -208,9 +217,9 @@ public class MarketAnalysisController : ControllerBase
             return StatusCode(500, new { error = ex.Message });
         }
     }
-
+    
     // ========== Helper Method ==========
-
+    
     private GenerateMarketAnalysisResponse GenerateComprehensiveResponse(
         string therapeuticArea,
         string product,
@@ -238,7 +247,7 @@ public class MarketAnalysisController : ControllerBase
                 "ClinicalTrials.gov"
             },
             ExecutiveSummary = $"The {therapeuticArea} market for {product} represents one of the most dynamic and rapidly expanding segments in pharmaceutical history, driven by breakthrough efficacy in both diabetes management and weight loss. The market is projected to reach $100+ billion by 2030, with a CAGR of 25-30%.\n\n**Key Market Drivers:** {product} has revolutionized treatment paradigms, demonstrating unprecedented outcomes alongside cardiovascular benefits.\n\n**Strategic Outlook:** The market is experiencing supply constraints due to overwhelming demand, creating significant opportunities for new entrants. Payer coverage is expanding rapidly despite high pricing.\n\n**Critical Success Factors:** Manufacturing scale-up, differentiated clinical profiles, and innovative delivery mechanisms will determine market winners.",
-
+            
             MarketOverview = new MarketOverviewDto
             {
                 MarketSize = "$24.8 billion (2024)",
@@ -250,7 +259,7 @@ public class MarketAnalysisController : ControllerBase
                     "Supply chain constraints limiting market penetration despite unprecedented demand"
                 }
             },
-
+            
             FinancialForecast = new FinancialForecastDto
             {
                 Cagr = "28.5%",
@@ -265,7 +274,7 @@ public class MarketAnalysisController : ControllerBase
                     "Obesity indication approval expanding addressable market"
                 }
             },
-
+            
             Competitors = new List<CompetitorDto>
             {
                 new CompetitorDto
@@ -276,7 +285,7 @@ public class MarketAnalysisController : ControllerBase
                     Status = "Market Leader - 45% market share"
                 }
             },
-
+            
             ScientificEvidence = new List<ScientificEvidenceDto>
             {
                 new ScientificEvidenceDto
@@ -287,7 +296,7 @@ public class MarketAnalysisController : ControllerBase
                     Summary = "SELECT trial: 20% reduction in MACE"
                 }
             },
-
+            
             AIInsights = new AIInsightsDto
             {
                 Swot = new SWOTDto
@@ -314,12 +323,12 @@ public class MarketAnalysisController : ControllerBase
                     "Manufacturing Scale-Up"
                 }
             },
-
+            
             Risks = new List<string>
             {
                 "Supply Chain Disruption"
             },
-
+            
             Triangulation = new TriangulationDto
             {
                 Score = 0.92,
