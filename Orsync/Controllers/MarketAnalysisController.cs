@@ -4,8 +4,8 @@ using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json;
 using System.Security.Claims;
-using System.Text.Json;
 using static ApplicationLayer.Contracts.DTOs.GenerateMarketAnalysisResponse;
 
 namespace Orsync.Controllers;
@@ -18,79 +18,162 @@ public class MarketAnalysisController : ControllerBase
     private readonly IAnalysisRepository _analysisRepository;
     private readonly IUploadedFileRepository _fileRepository;
     private readonly IFileStorageService _fileStorageService;
+    private readonly IMLApiService _mlApiService;
     private readonly ILogger<MarketAnalysisController> _logger;
     private readonly IConfiguration _configuration;
-    
+
     public MarketAnalysisController(
         IAnalysisRepository analysisRepository,
         IUploadedFileRepository fileRepository,
         IFileStorageService fileStorageService,
+        IMLApiService mlApiService,
         ILogger<MarketAnalysisController> logger,
         IConfiguration configuration)
     {
         _analysisRepository = analysisRepository;
         _fileRepository = fileRepository;
         _fileStorageService = fileStorageService;
+        _mlApiService = mlApiService;
         _logger = logger;
         _configuration = configuration;
     }
-    
+
     private string GetUserId()
     {
         return User.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? throw new UnauthorizedAccessException("User ID not found");
     }
-    
+
     /// <summary>
-    /// ✨ THE MAIN ENDPOINT - توليد تحليل سوقي مع رفع ملفات
+    /// Generate comprehensive market analysis with ML processing
     /// </summary>
+    /// <param name="therapeuticArea">Therapeutic area (required) - e.g., "GLP-1 Agonists"</param>
+    /// <param name="product">Specific product name (optional) - e.g., "Ozempic"</param>
+    /// <param name="indication">Disease indication (optional) - e.g., "Type 2 Diabetes"</param>
+    /// <param name="geography">Target geography (required) - e.g., "Global", "US", "EU"</param>
+    /// <param name="researchDepth">Research depth level (required) - "quick", "standard", or "comprehensive"</param>
+    /// <param name="files">Files to upload and analyze (optional) - PDF, Excel, Word documents</param>
+    /// <returns>Complete market analysis report</returns>
     [HttpPost("generate")]
     [Consumes("multipart/form-data")]
-    [RequestSizeLimit(100_000_000)]
+    [RequestSizeLimit(100_000_000)] // 100 MB
+    [ProducesResponseType(typeof(GenerateMarketAnalysisResponse), 200)]
+    [ProducesResponseType(400)]
+    [ProducesResponseType(502)]
+    [ProducesResponseType(504)]
     public async Task<IActionResult> Generate(
         [FromForm] string therapeuticArea,
-        [FromForm] string product,
-        [FromForm] string indication,
+        [FromForm] string? product,
+        [FromForm] string? indication,
         [FromForm] string geography,
+        [FromForm] string researchDepth,
         [FromForm] List<IFormFile>? files)
     {
         try
         {
+            _logger.LogInformation("========================================");
+            _logger.LogInformation("NEW GENERATE REQUEST");
+            _logger.LogInformation("========================================");
+
+            // Log received parameters
+            _logger.LogInformation("RECEIVED PARAMETERS:");
+            _logger.LogInformation("  therapeuticArea: '{Value}'", therapeuticArea ?? "NULL");
+            _logger.LogInformation("  product: '{Value}'", product ?? "NULL");
+            _logger.LogInformation("  indication: '{Value}'", indication ?? "NULL");
+            _logger.LogInformation("  geography: '{Value}'", geography ?? "NULL");
+            _logger.LogInformation("  researchDepth: '{Value}'", researchDepth ?? "NULL");
+            _logger.LogInformation("  files count: {Count}", files?.Count ?? 0);
+
+            // Validate required fields
+            if (string.IsNullOrWhiteSpace(therapeuticArea))
+            {
+                _logger.LogWarning("Validation failed: therapeuticArea is required");
+                return BadRequest(new
+                {
+                    error = "Validation failed",
+                    field = "therapeuticArea",
+                    message = "Therapeutic area is required and cannot be empty"
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(geography))
+            {
+                _logger.LogWarning("Validation failed: geography is required");
+                return BadRequest(new
+                {
+                    error = "Validation failed",
+                    field = "geography",
+                    message = "Geography is required and cannot be empty"
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(researchDepth))
+            {
+                _logger.LogWarning("Validation failed: researchDepth is required");
+                return BadRequest(new
+                {
+                    error = "Validation failed",
+                    field = "researchDepth",
+                    message = "Research depth is required and cannot be empty"
+                });
+            }
+
+            // Validate researchDepth value
+            var validDepths = new[] { "quick", "standard", "comprehensive" };
+            var normalizedDepth = researchDepth.Trim().ToLower();
+
+            if (!validDepths.Contains(normalizedDepth))
+            {
+                _logger.LogWarning("Invalid researchDepth: '{Value}'", researchDepth);
+                return BadRequest(new
+                {
+                    error = "Validation failed",
+                    field = "researchDepth",
+                    message = "Research depth must be one of: quick, standard, comprehensive",
+                    received = researchDepth,
+                    validValues = validDepths
+                });
+            }
+
+            _logger.LogInformation("✓ Validation passed");
+
+            // Get user ID
             var userId = GetUserId();
-            
-            _logger.LogInformation(
-                "Generate analysis request from user {UserId} for {Product}",
-                userId, product);
-            
-            // ✅ 1. Upload files and generate URLs
-            var uploadedFileUrls = new List<UploadedFileUrlDto>();
+            _logger.LogInformation("User ID: {UserId}", userId);
+
+            // Upload files
+            var mlApiFiles = new List<MLApiFileDto>();
             var fileIds = new List<Guid>();
-            
+
             if (files != null && files.Any())
             {
                 var batchId = Guid.NewGuid();
-                var baseUrl = _configuration["FileStorage:BaseUrl"] ?? Request.Scheme + "://" + Request.Host;
-                
-                _logger.LogInformation("Uploading {Count} files", files.Count);
-                
+                _logger.LogInformation("Uploading {Count} files (BatchId: {BatchId})", files.Count, batchId);
+
                 foreach (var file in files)
                 {
-                    if (file.Length == 0) continue;
-                    
-                    // Upload to storage
+                    if (file.Length == 0)
+                    {
+                        _logger.LogWarning("Skipping empty file: {FileName}", file.FileName);
+                        continue;
+                    }
+
+                    _logger.LogInformation("Uploading: {FileName} ({Size} bytes)", file.FileName, file.Length);
+
                     var memoryStream = new MemoryStream();
                     await file.CopyToAsync(memoryStream);
                     memoryStream.Position = 0;
-                    
+
                     var uploadResult = await _fileStorageService.UploadFileAsync(
                         memoryStream,
                         file.FileName,
                         file.ContentType
                     );
-                    
+
                     memoryStream.Dispose();
-                    
-                    // Save metadata to DB
+
+                    _logger.LogInformation("✓ Uploaded: {Url}", uploadResult.PublicUrl);
+
                     var uploadedFile = new UploadedFile(
                         userId: userId,
                         fileName: file.FileName,
@@ -99,88 +182,257 @@ public class MarketAnalysisController : ControllerBase
                         fileExtension: Path.GetExtension(file.FileName),
                         batchId: batchId
                     );
-                    
+
                     await _fileRepository.AddAsync(uploadedFile);
                     fileIds.Add(uploadedFile.Id);
-                    
-                    // ✨ Add to URLs list for ML Engineer
-                    uploadedFileUrls.Add(new UploadedFileUrlDto
+
+                    mlApiFiles.Add(new MLApiFileDto
                     {
                         FileId = uploadedFile.Id.ToString(),
                         FileName = uploadedFile.FileName,
-                        FileUrl = uploadResult.PublicUrl,  // ✨ URL للـ ML Engineer
+                        FileUrl = uploadResult.PublicUrl,
                         FileSize = uploadedFile.FileSize,
                         FileExtension = uploadedFile.FileExtension
                     });
                 }
+
+                _logger.LogInformation("✓ Successfully uploaded {Count} files", mlApiFiles.Count);
             }
-            
-            // ✅ 2. Generate comprehensive response
-            var response = GenerateComprehensiveResponse(therapeuticArea, product, indication, geography);
-            
-            // ✅ 3. Create Analysis entity
+            else
+            {
+                _logger.LogInformation("No files to upload");
+            }
+
+            // Prepare ML API request
+            var mlApiRequest = new MLApiRequestDto
+            {
+                TherapeuticArea = therapeuticArea.Trim(),
+                SpecificProduct = product?.Trim(),
+                Indication = indication?.Trim(),
+                TargetGeography = geography.Trim(),
+                ResearchDepth = normalizedDepth,
+                Files = mlApiFiles
+            };
+
+            _logger.LogInformation("ML API Request prepared:");
+            _logger.LogInformation("  TherapeuticArea: '{Value}'", mlApiRequest.TherapeuticArea);
+            _logger.LogInformation("  SpecificProduct: '{Value}'", mlApiRequest.SpecificProduct ?? "NULL");
+            _logger.LogInformation("  Indication: '{Value}'", mlApiRequest.Indication ?? "NULL");
+            _logger.LogInformation("  TargetGeography: '{Value}'", mlApiRequest.TargetGeography);
+            _logger.LogInformation("  ResearchDepth: '{Value}'", mlApiRequest.ResearchDepth);
+            _logger.LogInformation("  Files: {Count}", mlApiRequest.Files.Count);
+
+            // Call ML API
+            _logger.LogInformation("Calling ML API...");
+            GenerateMarketAnalysisResponse mlResponse;
+
+            try
+            {
+                mlResponse = await _mlApiService.GenerateAnalysisAsync(mlApiRequest);
+                _logger.LogInformation("✓ ML API call completed successfully");
+            }
+            catch (TimeoutException timeoutEx)
+            {
+                _logger.LogError(timeoutEx, "ML API timeout");
+
+                return StatusCode(504, new
+                {
+                    error = "ML service timeout",
+                    details = timeoutEx.Message,
+                    message = "The analysis is taking longer than expected. Please try again with 'quick' research depth.",
+                    suggestion = "Use researchDepth='quick' for faster processing"
+                });
+            }
+            catch (HttpRequestException httpEx)
+            {
+                _logger.LogError(httpEx, "ML API request failed");
+
+                return StatusCode(502, new
+                {
+                    error = "ML service is unavailable",
+                    details = httpEx.Message,
+                    message = "Please try again later"
+                });
+            }
+            catch (Exception mlEx)
+            {
+                _logger.LogError(mlEx, "Unexpected ML API error");
+
+                return StatusCode(500, new
+                {
+                    error = "ML processing failed",
+                    details = mlEx.Message,
+                    message = "An error occurred while processing your request"
+                });
+            }
+
+            // Create Analysis entity
+            _logger.LogInformation("Creating Analysis entity...");
+
             var analysis = new Analysis(
                 userId: userId,
-                therapeuticArea: therapeuticArea,
-                product: product,
-                indication: indication,
-                geography: geography,
-                researchDepth: "deep_dive"
+                therapeuticArea: therapeuticArea.Trim(),
+                product: product?.Trim() ?? "General",
+                indication: indication?.Trim() ?? "General",
+                geography: geography.Trim(),
+                researchDepth: normalizedDepth
             );
-            
-            response.Id = analysis.Id.ToString();
 
-            // ✅ 4. Add uploaded files info to response
-            //response.UploadedFiles = uploadedFileUrls;  // ✨ الملفات مع الـ URLs
-            response.UploadedFiles = uploadedFileUrls
-              .Select(f => new UploadedFileUrlDto
-              {
-                  FileId = f.FileId,
-                  FileName = f.FileName,
-                  FileUrl = f.FileUrl,
-                  FileSize = f.FileSize,
-                  FileExtension = f.FileExtension
-              }).ToList();
-            var responseJson = JsonSerializer.Serialize(response);
+            // Add uploaded files info to response
+            mlResponse.UploadedFiles = mlApiFiles.Select(f => new UploadedFileUrlDto
+            {
+                FileId = f.FileId,
+                FileName = f.FileName,
+                FileUrl = f.FileUrl,
+                FileSize = f.FileSize,
+                FileExtension = f.FileExtension
+            }).ToList();
+
+            _logger.LogInformation("Added {Count} file URLs to response", mlResponse.UploadedFiles.Count);
+
+            // Save ML response to database using Newtonsoft.Json
+            var responseJson = JsonConvert.SerializeObject(mlResponse);
             analysis.SetResponse(responseJson);
-            
+
             if (fileIds.Any())
             {
                 analysis.SetFileIds(fileIds);
+                _logger.LogInformation("Linked {Count} files to analysis", fileIds.Count);
             }
-            
+
             await _analysisRepository.AddAsync(analysis);
-            
-            _logger.LogInformation(
-                "Analysis created: {AnalysisId} with {FileCount} files",
-                analysis.Id, uploadedFileUrls.Count);
-            
-            return Ok(response);
+
+            _logger.LogInformation("========================================");
+            _logger.LogInformation("✓ Analysis saved successfully!");
+            _logger.LogInformation("Analysis ID: {AnalysisId}", analysis.Id);
+            _logger.LogInformation("Confidence Score: {Score}", mlResponse.ConfidenceScore);
+            _logger.LogInformation("========================================");
+
+            return Ok(mlResponse);
+        }
+        catch (UnauthorizedAccessException authEx)
+        {
+            _logger.LogWarning(authEx, "Unauthorized access");
+            return Unauthorized(new { error = authEx.Message });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error generating analysis");
-            return StatusCode(500, new { error = ex.Message });
+            _logger.LogError(ex, "Unexpected error in Generate");
+            return StatusCode(500, new
+            {
+                error = "An unexpected error occurred",
+                details = ex.Message,
+                type = ex.GetType().Name
+            });
         }
     }
-    
+
     /// <summary>
-    /// الحصول على كل التحاليل
+    /// Test ML API connection and health
+    /// </summary>
+    [HttpGet("test-ml-api")]
+    [ProducesResponseType(200)]
+    [ProducesResponseType(502)]
+    [ProducesResponseType(503)]
+    public async Task<IActionResult> TestMLApi()
+    {
+        try
+        {
+            _logger.LogInformation("Testing ML API connection...");
+
+            var baseUrl = _configuration["MLApi:BaseUrl"];
+            var timeout = _configuration["MLApi:TimeoutSeconds"];
+
+            _logger.LogInformation("Configuration:");
+            _logger.LogInformation("  BaseUrl: {BaseUrl}", baseUrl);
+            _logger.LogInformation("  Timeout: {Timeout}s", timeout);
+
+            var isHealthy = await _mlApiService.HealthCheckAsync();
+
+            if (isHealthy)
+            {
+                _logger.LogInformation("✓ ML API is healthy");
+
+                return Ok(new
+                {
+                    status = "success",
+                    message = "ML API is reachable and healthy",
+                    timestamp = DateTime.UtcNow,
+                    configuration = new
+                    {
+                        baseUrl = baseUrl,
+                        healthEndpoint = $"{baseUrl}/health",
+                        reportEndpoint = $"{baseUrl}/api/v1/report",
+                        timeout = $"{timeout} seconds"
+                    }
+                });
+            }
+            else
+            {
+                _logger.LogWarning("ML API is unhealthy");
+
+                return StatusCode(503, new
+                {
+                    status = "unhealthy",
+                    message = "ML API is reachable but not healthy",
+                    timestamp = DateTime.UtcNow,
+                    configuration = new
+                    {
+                        baseUrl = baseUrl,
+                        healthEndpoint = $"{baseUrl}/health"
+                    }
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ML API test failed");
+
+            return StatusCode(502, new
+            {
+                status = "error",
+                message = "Cannot reach ML API",
+                error = ex.Message,
+                timestamp = DateTime.UtcNow,
+                configuration = new
+                {
+                    baseUrl = _configuration["MLApi:BaseUrl"]
+                }
+            });
+        }
+    }
+
+    /// <summary>
+    /// Get all analyses for the current user
     /// </summary>
     [HttpGet("GetAll")]
+    [ProducesResponseType(typeof(List<GenerateMarketAnalysisResponse>), 200)]
     public async Task<IActionResult> GetAll()
     {
         try
         {
             var userId = GetUserId();
+            _logger.LogInformation("Fetching all analyses for user: {UserId}", userId);
+
             var analyses = await _analysisRepository.GetByUserIdAsync(userId);
-            
+
+            _logger.LogInformation("Found {Count} analyses", analyses.Count);
+
             var responses = analyses.Select(a =>
             {
-                var response = JsonSerializer.Deserialize<GenerateMarketAnalysisResponse>(a.ResponseJson);
-                return response;
-            }).ToList();
-            
+                try
+                {
+                    return JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(a.ResponseJson);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to deserialize analysis {AnalysisId}", a.Id);
+                    return null;
+                }
+            })
+            .Where(r => r != null)
+            .ToList();
+
             return Ok(responses);
         }
         catch (Exception ex)
@@ -189,161 +441,101 @@ public class MarketAnalysisController : ControllerBase
             return StatusCode(500, new { error = ex.Message });
         }
     }
-    
+
     /// <summary>
-    /// الحصول على تحليل محدد
+    /// Get a specific analysis by ID
     /// </summary>
     [HttpGet("{id}")]
+    [ProducesResponseType(typeof(GenerateMarketAnalysisResponse), 200)]
+    [ProducesResponseType(404)]
+    [ProducesResponseType(403)]
     public async Task<IActionResult> GetById(Guid id)
     {
         try
         {
             var userId = GetUserId();
+            _logger.LogInformation("Fetching analysis {AnalysisId} for user {UserId}", id, userId);
+
             var analysis = await _analysisRepository.GetByIdAsync(id);
-            
+
             if (analysis == null)
-                return NotFound(new { error = "Analysis not found" });
-            
+            {
+                _logger.LogWarning("Analysis not found: {AnalysisId}", id);
+                return NotFound(new
+                {
+                    error = "Analysis not found",
+                    analysisId = id
+                });
+            }
+
             if (analysis.UserId != userId)
+            {
+                _logger.LogWarning("User {UserId} attempted to access analysis {AnalysisId} owned by {OwnerId}",
+                    userId, id, analysis.UserId);
                 return Forbid();
-            
-            var response = JsonSerializer.Deserialize<GenerateMarketAnalysisResponse>(analysis.ResponseJson);
-            
+            }
+
+            var response = JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(analysis.ResponseJson);
+
+            _logger.LogInformation("✓ Analysis retrieved successfully");
+
             return Ok(response);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error fetching analysis");
+            _logger.LogError(ex, "Error fetching analysis {AnalysisId}", id);
             return StatusCode(500, new { error = ex.Message });
         }
     }
-    
-    // ========== Helper Method ==========
-    
-    private GenerateMarketAnalysisResponse GenerateComprehensiveResponse(
-        string therapeuticArea,
-        string product,
-        string indication,
-        string geography)
+
+    /// <summary>
+    /// Delete a specific analysis by ID
+    /// </summary>
+    [HttpDelete("{id}")]
+    [ProducesResponseType(200)]
+    [ProducesResponseType(404)]
+    [ProducesResponseType(403)]
+    public async Task<IActionResult> Delete(Guid id)
     {
-        return new GenerateMarketAnalysisResponse
+        try
         {
-            Id = Guid.NewGuid().ToString(),
-            Timestamp = DateTime.UtcNow,
-            Input = new InputDataDto
+            var userId = GetUserId();
+            _logger.LogInformation("Deleting analysis {AnalysisId} for user {UserId}", id, userId);
+
+            var analysis = await _analysisRepository.GetByIdAsync(id);
+
+            if (analysis == null)
             {
-                Topic = therapeuticArea,
-                Product = product,
-                Indication = indication,
-                Geography = geography,
-                Depth = "deep_dive"
-            },
-            ConfidenceScore = 0.92,
-            GeneratedBy = new List<string>
-            {
-                "Gemini AI Agent",
-                "Evidence Linker",
-                "PubMed",
-                "ClinicalTrials.gov"
-            },
-            ExecutiveSummary = $"The {therapeuticArea} market for {product} represents one of the most dynamic and rapidly expanding segments in pharmaceutical history, driven by breakthrough efficacy in both diabetes management and weight loss. The market is projected to reach $100+ billion by 2030, with a CAGR of 25-30%.\n\n**Key Market Drivers:** {product} has revolutionized treatment paradigms, demonstrating unprecedented outcomes alongside cardiovascular benefits.\n\n**Strategic Outlook:** The market is experiencing supply constraints due to overwhelming demand, creating significant opportunities for new entrants. Payer coverage is expanding rapidly despite high pricing.\n\n**Critical Success Factors:** Manufacturing scale-up, differentiated clinical profiles, and innovative delivery mechanisms will determine market winners.",
-            
-            MarketOverview = new MarketOverviewDto
-            {
-                MarketSize = "$24.8 billion (2024)",
-                Cagr = "28.5%",
-                ForecastYear = "2030",
-                KeyTrends = new List<string>
+                _logger.LogWarning("Analysis not found: {AnalysisId}", id);
+                return NotFound(new
                 {
-                    "Explosive demand for weight loss indications driving 300%+ prescription growth",
-                    "Supply chain constraints limiting market penetration despite unprecedented demand"
-                }
-            },
-            
-            FinancialForecast = new FinancialForecastDto
-            {
-                Cagr = "28.5%",
-                RevenueProjections = new List<RevenueProjectionDto>
-                {
-                    new RevenueProjectionDto { Year = "2024", Amount = "$24.8 billion" },
-                    new RevenueProjectionDto { Year = "2025", Amount = "$35.2 billion" },
-                    new RevenueProjectionDto { Year = "2030", Amount = "$110+ billion" }
-                },
-                KeyDrivers = new List<string>
-                {
-                    "Obesity indication approval expanding addressable market"
-                }
-            },
-            
-            Competitors = new List<CompetitorDto>
-            {
-                new CompetitorDto
-                {
-                    Name = "Novo Nordisk",
-                    Product = "Ozempic/Wegovy",
-                    Mechanism = "GLP-1 receptor agonist",
-                    Status = "Market Leader - 45% market share"
-                }
-            },
-            
-            ScientificEvidence = new List<ScientificEvidenceDto>
-            {
-                new ScientificEvidenceDto
-                {
-                    Title = "Semaglutide and cardiovascular outcomes",
-                    Source = "PubMed (2023)",
-                    Url = "https://pubmed.ncbi.nlm.nih.gov/37622680/",
-                    Summary = "SELECT trial: 20% reduction in MACE"
-                }
-            },
-            
-            AIInsights = new AIInsightsDto
-            {
-                Swot = new SWOTDto
-                {
-                    Strengths = new List<string> { "Unprecedented clinical efficacy" },
-                    Weaknesses = new List<string> { "Supply constraints" },
-                    Opportunities = new List<string> { "Obesity market expansion" },
-                    Threats = new List<string> { "Payer restrictions" }
-                },
-                Regulatory = new RegulatoryDto
-                {
-                    ApprovalPathways = new List<string> { "FDA: Approved for T2D (2017)" },
-                    KeyRegulations = new List<string> { "FDA REMS program" },
-                    UpcomingChanges = new List<string> { "Medicare expansion" }
-                },
-                Reimbursement = new ReimbursementDto
-                {
-                    PayerLandscape = new List<string> { "Commercial insurance: 80%+ coverage" },
-                    PricingModels = new List<string> { "List price: $1,000-1,500/month" },
-                    AccessBarriers = new List<string> { "Prior authorization required" }
-                },
-                StrategicRecommendations = new List<string>
-                {
-                    "Manufacturing Scale-Up"
-                }
-            },
-            
-            Risks = new List<string>
-            {
-                "Supply Chain Disruption"
-            },
-            
-            Triangulation = new TriangulationDto
-            {
-                Score = 0.92,
-                Methodology = "Strategic Triangulation",
-                Points = new List<TriangulationPointDto>
-                {
-                    new TriangulationPointDto
-                    {
-                        Claim = "Market will exceed $100B by 2030",
-                        Sources = new List<string> { "Industry Reports" },
-                        Confidence = 0.95,
-                        Status = "verified"
-                    }
-                }
+                    error = "Analysis not found",
+                    analysisId = id
+                });
             }
-        };
+
+            if (analysis.UserId != userId)
+            {
+                _logger.LogWarning("User {UserId} attempted to delete analysis {AnalysisId} owned by {OwnerId}",
+                    userId, id, analysis.UserId);
+                return Forbid();
+            }
+
+            await _analysisRepository.DeleteAsync(id);
+
+            _logger.LogInformation("✓ Analysis {AnalysisId} deleted successfully", id);
+
+            return Ok(new
+            {
+                message = "Analysis deleted successfully",
+                analysisId = id,
+                timestamp = DateTime.UtcNow
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting analysis {AnalysisId}", id);
+            return StatusCode(500, new { error = ex.Message });
+        }
     }
 }
