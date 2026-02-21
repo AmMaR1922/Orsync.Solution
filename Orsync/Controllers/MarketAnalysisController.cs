@@ -686,35 +686,41 @@ public class MarketAnalysisController : ControllerBase
                 Indication = indication?.Trim(),
 
                 // ✅ Convert Enum List → String
-                //TargetGeography = string.Join(",", geography
-                //         .Select(g => g.ToString().ToLower())),
+                ////TargetGeography = string.Join(",", geography
+                ////         .Select(g => g.ToString().ToLower())),
 
-                TargetGeography = string.Join(",",
-                        geography.Select(g =>
-                            g.GetType()
-                             .GetField(g.ToString())
-                             ?.GetCustomAttributes(typeof(EnumMemberAttribute), false)
-                             .Cast<EnumMemberAttribute>()
-                             .FirstOrDefault()?.Value ?? g.ToString()
-                        )
-                    ),
+                //TargetGeography = string.Join(",",
+                //        geography.Select(g =>
+                //            g.GetType()
+                //             .GetField(g.ToString())
+                //             ?.GetCustomAttributes(typeof(EnumMemberAttribute), false)
+                //             .Cast<EnumMemberAttribute>()
+                //             .FirstOrDefault()?.Value ?? g.ToString()
+                //        )
+                //    ),
 
-                //ResearchDepth = string.Join(",", researchDepth
-                //.Select(r => r.ToString().ToLower())),
+                ////ResearchDepth = string.Join(",", researchDepth
+                ////.Select(r => r.ToString().ToLower())),
 
-                                ResearchDepth = string.Join(",",
-                    researchDepth.Select(r =>
-                        r.GetType()
-                         .GetField(r.ToString())
-                         ?.GetCustomAttributes(typeof(EnumMemberAttribute), false)
-                         .Cast<EnumMemberAttribute>()
-                         .FirstOrDefault()?.Value ?? r.ToString()
-                    )
-                ),
+                //                ResearchDepth = string.Join(",",
+                //    researchDepth.Select(r =>
+                //        r.GetType()
+                //         .GetField(r.ToString())
+                //         ?.GetCustomAttributes(typeof(EnumMemberAttribute), false)
+                //         .Cast<EnumMemberAttribute>()
+                //         .FirstOrDefault()?.Value ?? r.ToString()
+                //    )
+                //),
 
+                                                            TargetGeography = geography
+                                                .FirstOrDefault()
+                                                   .ToString(),
 
-                Files = mlApiFiles
-            };
+                                                            ResearchDepth = researchDepth
+                                                .FirstOrDefault()
+                                                   .ToString(),
+                                                            Files = mlApiFiles
+                                                        };
 
             _logger.LogInformation("Calling ML API...");
 
