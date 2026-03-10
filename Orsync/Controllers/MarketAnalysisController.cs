@@ -538,6 +538,9 @@
 //        }
 //    }
 //}
+
+
+
 using ApplicationLayer.Contracts.DTOs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
@@ -548,9 +551,7 @@ using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using System.Security.Claims;
 using System.Text.Json;
-using JsonSerializer = System.Text.Json.JsonSerializer;
-
-namespace Orsync.Controllers;
+ namespace Orsync.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -685,7 +686,8 @@ public class MarketAnalysisController : ControllerBase
                 researchDepth
             );
 
-            var responseJson = JsonSerializer.Serialize(mlResponse);
+            //var responseJson = JsonSerializer.Serialize(mlResponse);
+            var responseJson = JsonConvert.SerializeObject(mlResponse);
             analysis.SetResponse(responseJson);
 
             if (fileIds.Any())
@@ -710,22 +712,47 @@ public class MarketAnalysisController : ControllerBase
     // ============================================================
     // ✅ GET ALL
     // ============================================================
+ 
 
     [HttpGet("GetAll")]
     public async Task<IActionResult> GetAll()
     {
-        var userId = GetUserId();
-        var analyses = await _analysisRepository.GetByUserIdAsync(userId);
+        try
+        {
+            var userId = GetUserId();
 
-        var responses = analyses
-            .Where(a => !string.IsNullOrWhiteSpace(a.ResponseJson))
-            .Select(a => JsonSerializer.Deserialize<GenerateMarketAnalysisResponse>(a.ResponseJson))
-            .Where(r => r != null)
-            .ToList();
+            var analyses = await _analysisRepository.GetByUserIdAsync(userId);
 
-        return Ok(responses);
+            var responses = analyses
+                .Where(a => !string.IsNullOrWhiteSpace(a.ResponseJson))
+                .Select(a =>
+                {
+                    try
+                    {
+                        return JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(a.ResponseJson);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "JSON Deserialize Failed");
+                        return null;
+                    }
+                })
+                .Where(r => r != null)
+                .ToList();
+
+            return Ok(responses);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GetAll Error");
+
+            return StatusCode(500, new
+            {
+                error = ex.Message,
+                stack = ex.StackTrace
+            });
+        }
     }
-
     // ============================================================
     // ✅ GET BY ID (Guid أو ML Id)
     // ============================================================

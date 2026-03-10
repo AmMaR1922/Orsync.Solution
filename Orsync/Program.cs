@@ -182,11 +182,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Services
 
-builder.Services.AddControllers()
-    .AddJsonOptions(options =>
+builder.Services
+    .AddControllers()
+    .AddNewtonsoftJson(options =>
     {
-        options.JsonSerializerOptions.Converters.Add(
-            new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
     });
 
 builder.Services.AddEndpointsApiExplorer();
