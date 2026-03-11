@@ -36,6 +36,20 @@ public class MLApiService : IMLApiService
         MLApiRequestDto request,
         CancellationToken cancellationToken = default)
     {
+        var responseContent = await GenerateAnalysisRawAsync(request, cancellationToken);
+
+        var result = JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(responseContent);
+
+        if (result == null)
+            throw new Exception("Invalid response from ML API");
+
+        return result;
+    }
+
+    public async Task<string> GenerateAnalysisRawAsync(
+        MLApiRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
         try
         {
             var requestUrl = $"{_mlApiBaseUrl}/api/v1/report";

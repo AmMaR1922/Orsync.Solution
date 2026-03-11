@@ -638,23 +638,31 @@ public class MarketAnalysisController : ControllerBase
                 Files = mlApiFiles
             };
 
-            var mlResponse = await _mlApiService.GenerateAnalysisAsync(mlApiRequest);
+            var mlRawResponse = await _mlApiService.GenerateAnalysisRawAsync(mlApiRequest);
+            var mlResponseObject = JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JObject>(mlRawResponse)
+                                   ?? new Newtonsoft.Json.Linq.JObject();
 
-            mlResponse.UploadedFiles = mlApiFiles.Select(f => new UploadedFileUrlDto
+            if (mlApiFiles.Any())
             {
-                FileId = f.FileId,
-                FileName = f.FileName,
-                FileUrl = f.FileUrl,
-                FileSize = f.FileSize,
-                FileExtension = f.FileExtension
-            }).ToList();
+                mlResponseObject["uploaded_files"] = Newtonsoft.Json.Linq.JArray.FromObject(
+                    mlApiFiles.Select(f => new UploadedFileUrlDto
+                    {
+                        FileId = f.FileId,
+                        FileName = f.FileName,
+                        FileUrl = f.FileUrl,
+                        FileSize = f.FileSize,
+                        FileExtension = f.FileExtension
+                    }).ToList());
+            }
+
+            var finalResponseJson = mlResponseObject.ToString();
 
             var analysis = new Analysis(userId, therapeuticArea.Trim(), product ?? "General", indication ?? "General", geography, researchDepth);
-            analysis.SetResponse(JsonConvert.SerializeObject(mlResponse));
+            analysis.SetResponse(finalResponseJson);
             if (fileIds.Any()) analysis.SetFileIds(fileIds);
             await _analysisRepository.AddAsync(analysis);
 
-            return Ok(mlResponse);
+            return Content(finalResponseJson, "application/json");
         }
         catch (Exception ex)
         {
