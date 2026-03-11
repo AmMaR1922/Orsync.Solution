@@ -69,32 +69,56 @@ public class MLApiService : IMLApiService
 
             var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
 
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        return responseContent;
+    }
 
-            _logger.LogInformation("ML API Status: {Status}", response.StatusCode);
+    private async Task<string> SendMultipartRequestAsync(string requestUrl, MLApiRequestDto request, CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUrl);
 
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogError("ML API ERROR RESPONSE:");
-                _logger.LogError(responseContent);
+        if (!string.IsNullOrWhiteSpace(_mlApiKey))
+            httpRequest.Headers.Add("X-API-Key", _mlApiKey);
 
-                throw new Exception($"ML API Error ({response.StatusCode}): {responseContent}");
-            }
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent(request.TherapeuticArea ?? string.Empty), "therapeutic_area");
 
             var result = JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(responseContent);
 
-            if (result == null)
-                throw new Exception("Invalid response from ML API");
+        if (!string.IsNullOrWhiteSpace(request.Indication))
+            form.Add(new StringContent(request.Indication), "indication");
 
-            _logger.LogInformation("✓ ML Analysis generated successfully. ID: {Id}", result.Id);
+        foreach (var geo in request.TargetGeography ?? Enumerable.Empty<string>())
+            form.Add(new StringContent(geo), "target_geography");
 
-            return result;
-        }
-        catch (Exception ex)
+        foreach (var depth in request.ResearchDepth ?? Enumerable.Empty<string>())
+            form.Add(new StringContent(depth), "research_depth");
+
+        foreach (var file in request.Files ?? Enumerable.Empty<MLApiFileDto>())
         {
-            _logger.LogError(ex, "ML API call failed");
-            throw;
+            form.Add(new StringContent(file.FileUrl), "file_urls");
+            form.Add(new StringContent(file.FileName), "file_names");
         }
+
+        httpRequest.Content = form;
+
+        var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        _logger.LogInformation("ML API Status (Multipart): {Status}", response.StatusCode);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("ML API ERROR RESPONSE (Multipart): {Response}", responseContent);
+            throw new Exception($"ML API Error ({response.StatusCode}): {responseContent}");
+        }
+
+        return responseContent;
+    }
+
+    private static bool IsMissingTherapeuticAreaValidationError(string responseContent)
+    {
+        return responseContent.Contains("\"therapeutic_area\"", StringComparison.OrdinalIgnoreCase)
+               && responseContent.Contains("\"missing\"", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<bool> HealthCheckAsync()
