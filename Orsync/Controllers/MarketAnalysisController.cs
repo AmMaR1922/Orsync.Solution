@@ -689,7 +689,7 @@ public class MarketAnalysisController : ControllerBase
                 {
                     try
                     {
-                        return JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(a.ResponseJson);
+                        return JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JToken>(a.ResponseJson);
                     }
                     catch (Exception ex)
                     {
@@ -700,7 +700,7 @@ public class MarketAnalysisController : ControllerBase
                 .Where(r => r != null)
                 .ToList();
 
-            return Ok(responses);
+            return Content(JsonConvert.SerializeObject(responses), "application/json");
         }
         catch (Exception ex)
         {
@@ -730,8 +730,21 @@ public class MarketAnalysisController : ControllerBase
             var analyses = await _analysisRepository.GetByUserIdAsync(userId);
 
             analysis = analyses.FirstOrDefault(a =>
-                !string.IsNullOrWhiteSpace(a.ResponseJson) &&
-                a.ResponseJson.Contains($"\"id\":\"{id}\""));
+            {
+                if (string.IsNullOrWhiteSpace(a.ResponseJson))
+                    return false;
+
+                try
+                {
+                    var token = JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JToken>(a.ResponseJson);
+                    var responseId = token?["id"]?.ToString();
+                    return string.Equals(responseId, id, StringComparison.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    return false;
+                }
+            });
         }
 
         return analysis;
@@ -750,10 +763,7 @@ public class MarketAnalysisController : ControllerBase
         if (analysis.UserId != userId)
             return Forbid();
 
-        var response =
-            JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(analysis.ResponseJson);
-
-        return Ok(response);
+        return Content(analysis.ResponseJson, "application/json");
     }
 
     // ============================================================
