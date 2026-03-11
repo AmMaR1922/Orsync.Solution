@@ -1,4 +1,4 @@
-using ApplicationLayer.Contracts.DTOs;
+﻿using ApplicationLayer.Contracts.DTOs;
 using ApplicationLayer.Interfaces.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -65,14 +65,8 @@ public class MLApiService : IMLApiService
                 responseContent = await SendMultipartRequestAsync(requestUrl, request, cancellationToken);
             }
 
-            var result = JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(responseContent);
-
-            if (result == null)
-                throw new Exception("Invalid response from ML API");
-
-            _logger.LogInformation("? ML Analysis generated successfully. ID: {Id}", result.Id);
-
-            return result;
+            _logger.LogInformation("✓ ML Analysis generated successfully");
+            return responseContent;
         }
         catch (Exception ex)
         {
