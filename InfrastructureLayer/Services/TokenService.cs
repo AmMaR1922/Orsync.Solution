@@ -1,5 +1,4 @@
-﻿using ApplicationLayer.Interfaces.Infrastructure;
-using InfrastructureLayer.Identity;
+﻿ using InfrastructureLayer.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System;

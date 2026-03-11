@@ -1,63 +1,62 @@
-﻿ 
-
-using ApplicationLayer.Interfaces;
-using ApplicationLayer.Interfaces.Infrastructure;
-using ApplicationLayer.Services;
+﻿using ApplicationLayer.Interfaces.Repositories;
+using ApplicationLayer.Interfaces.Services;
 using InfrastructureLayer.Data.Context;
+using InfrastructureLayer.Data.Repositories;
 using InfrastructureLayer.Identity;
-using InfrastructureLayer.Repositories;
 using InfrastructureLayer.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using ITokenService = InfrastructureLayer.Services.ITokenService;
 
-namespace InfrastructureLayer.DependencyInjection
+namespace InfrastructureLayer.DependencyInjection;
+
+public static class DependencyInjection
 {
-    public static class DependencyInjection
+    public static IServiceCollection AddInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
-        public static IServiceCollection AddInfrastructure(
-            this IServiceCollection services,
-            IConfiguration configuration)
-        {
-    
-            // Database
-           
-            services.AddDbContext<ApplicationDbContext>(options =>
-                options.UseSqlServer(
-                    configuration.GetConnectionString("DefaultConnection"),
-                    b => b.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName)));
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options.UseSqlServer(
+                configuration.GetConnectionString("DefaultConnection"),
+                b => b.MigrationsAssembly("InfrastructureLayer")
+            ));
 
-            services.AddScoped<IApplicationDbContext>(provider =>
-                provider.GetRequiredService<ApplicationDbContext>());
-             
-            // Identity (Working in .NET 8)
-  
-            services.AddIdentityCore<ApplicationUser>(options =>
-            {
-                options.Password.RequireDigit = true;
-                options.Password.RequireLowercase = true;
-                options.Password.RequireUppercase = true;
-                options.Password.RequireNonAlphanumeric = true;
-                options.Password.RequiredLength = 8;
-                options.User.RequireUniqueEmail = true;
-            })
-            .AddRoles<IdentityRole>()
-            .AddEntityFrameworkStores<ApplicationDbContext>()
-            .AddDefaultTokenProviders();
- 
-            // Repositories
-      
-            services.AddScoped<IMarketAnalysisRepository, MarketAnalysisRepository>();
- 
-            // Services
-         
-            services.AddScoped<IMarketForecastProvider, MarketForecastProvider>();
-            services.AddScoped<IReportGenerator, ReportGeneratorService>();
-            // ✨ إضافة جديدة: Token Service
-            services.AddScoped<ITokenService, TokenService>();
-            return services;
-        }
+        services.AddIdentity<ApplicationUser, IdentityRole>(options =>
+        {
+            options.Password.RequireDigit = false;
+            options.Password.RequireLowercase = false;
+            options.Password.RequireUppercase = false;
+            options.Password.RequireNonAlphanumeric = false;
+            options.Password.RequiredLength = 6;
+            options.User.RequireUniqueEmail = true;
+        })
+        .AddEntityFrameworkStores<ApplicationDbContext>()
+        .AddDefaultTokenProviders();
+
+        // Repositories
+        services.AddScoped<IAnalysisRepository, AnalysisRepository>();
+        services.AddScoped<IUploadedFileRepository, UploadedFileRepository>();
+
+        // Services
+        services.AddScoped<IFileStorageService, LocalFileStorageService>();
+        services.AddScoped<ITokenService, TokenService>();
+
+        // ✨ ML API Service - هنا بيتسجل الـ HttpClient
+        services.AddHttpClient<IMLApiService, MLApiService>((serviceProvider, client) =>
+        {
+            var config = serviceProvider.GetRequiredService<IConfiguration>();
+
+            // ✨ قراءة الـ timeout من appsettings.json
+            var timeoutSeconds = int.Parse(config["MLApi:TimeoutSeconds"] ?? "600");
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+
+            // Optional: Add default headers
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+        });
+
+        return services;
     }
 }
-
