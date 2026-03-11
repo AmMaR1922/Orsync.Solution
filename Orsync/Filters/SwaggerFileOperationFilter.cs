@@ -33,8 +33,13 @@ public class SwaggerFileOperationFilter : IOperationFilter
                 {
                     Schema = new OpenApiSchema
                     {
-                        Type = "object",
-                        Properties = properties
+                        Schema = new OpenApiSchema
+                        {
+                            Type = "object",
+                            Properties = fileParams.ToDictionary(
+                                p => p.Name ?? string.Empty,
+                                p => new OpenApiSchema { Type = "string", Format = "binary" })
+                        }
                     }
                 }
             }
