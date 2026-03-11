@@ -57,7 +57,7 @@ namespace ApplicationLayer.Contracts.DTOs
     // ========================================
     public class FlexibleExecutiveSummaryConverter : JsonConverter<ExecutiveSummaryDto>
     {
-        public override ExecutiveSummaryDto ReadJson(JsonReader reader, Type objectType, ExecutiveSummaryDto existingValue, bool hasExistingValue, JsonSerializer serializer)
+        public override ExecutiveSummaryDto ReadJson(JsonReader reader, Type objectType, ExecutiveSummaryDto? existingValue, bool hasExistingValue, JsonSerializer serializer)
         {
             if (reader.TokenType == JsonToken.String)
             {
@@ -75,7 +75,7 @@ namespace ApplicationLayer.Contracts.DTOs
             return new ExecutiveSummaryDto();
         }
 
-        public override void WriteJson(JsonWriter writer, ExecutiveSummaryDto value, JsonSerializer serializer)
+        public override void WriteJson(JsonWriter writer, ExecutiveSummaryDto? value, JsonSerializer serializer)
         {
             serializer.Serialize(writer, value);
         }

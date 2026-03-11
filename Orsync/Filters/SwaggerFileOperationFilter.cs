@@ -84,7 +84,7 @@ namespace Orsync.Filters
                         {
                             Type = "object",
                             Properties = fileParams.ToDictionary(
-                                p => p.Name,
+                                p => p.Name ?? string.Empty,
                                 p => new OpenApiSchema { Type = "string", Format = "binary" })
                         }
                     }
