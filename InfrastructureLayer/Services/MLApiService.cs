@@ -65,8 +65,14 @@ public class MLApiService : IMLApiService
                 responseContent = await SendMultipartRequestAsync(requestUrl, request, cancellationToken);
             }
 
-            _logger.LogInformation("✓ ML Analysis generated successfully");
-            return responseContent;
+            var result = JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(responseContent);
+
+            if (result == null)
+                throw new Exception("Invalid response from ML API");
+
+            _logger.LogInformation("? ML Analysis generated successfully. ID: {Id}", result.Id);
+
+            return result;
         }
         catch (Exception ex)
         {
