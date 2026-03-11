@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿#region old
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -506,3 +507,5 @@ namespace ApplicationLayer.Contracts.DTOs
         public string FileExtension { get; set; } = string.Empty;
     }
 }
+#endregion
+

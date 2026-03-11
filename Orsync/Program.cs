@@ -169,32 +169,192 @@
 //app.MapControllers();
 
 //app.Run();
+
+// #region old 
+//using InfrastructureLayer.DependencyInjection;
+//using Microsoft.AspNetCore.Authentication.JwtBearer;
+//using Microsoft.AspNetCore.Http.Features; // لازم لـ FormOptions
+//using Microsoft.Extensions.FileProviders;
+//using Microsoft.IdentityModel.Tokens;
+//using Microsoft.OpenApi.Models;
+//using System.Text;
+//using System.Text.Json;
+//using System.Text.Json.Serialization;
+
+//var builder = WebApplication.CreateBuilder(args);
+
+//// Services
+
+//builder.Services
+//    .AddControllers()
+//    .AddNewtonsoftJson(options =>
+//    {
+//        options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
+//    });
+
+//builder.Services.AddEndpointsApiExplorer();
+
+//// إضافة البنية التحتية
+//builder.Services.AddInfrastructure(builder.Configuration);
+
+//// إعداد JWT
+//var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+//var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey not configured");
+
+//builder.Services.AddAuthentication(options =>
+//{
+//    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+//    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+//})
+//.AddJwtBearer(options =>
+//{
+//    options.TokenValidationParameters = new TokenValidationParameters
+//    {
+//        ValidateIssuer = true,
+//        ValidateAudience = true,
+//        ValidateLifetime = true,
+//        ValidateIssuerSigningKey = true,
+//        ValidIssuer = jwtSettings["Issuer"],
+//        ValidAudience = jwtSettings["Audience"],
+//        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey))
+//    };
+//});
+
+//// إعداد CORS مرة واحدة فقط
+//builder.Services.AddCors(options =>
+//{
+//    options.AddPolicy("AllowAll", policy =>
+//    {
+//        policy.AllowAnyOrigin()
+//              .AllowAnyMethod()
+//              .AllowAnyHeader();
+//    });
+//});
+
+//// زيادة الحد الأقصى لحجم الملفات المرفوعة
+//builder.Services.Configure<FormOptions>(options =>
+//{
+//    options.MultipartBodyLengthLimit = 100_000_000; // 100 MB
+//});
+
+//// إعداد Swagger مع JWT + Authorize تلقائي
+//builder.Services.AddSwaggerGen(c =>
+//{
+//    c.SwaggerDoc("v1", new OpenApiInfo { Title = "My API", Version = "v1" });
+
+//    // إعداد JWT Bearer
+//    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+//    {
+//        Name = "Authorization",
+//        Type = SecuritySchemeType.Http,
+//        Scheme = "bearer",
+//        BearerFormat = "JWT",
+//        In = ParameterLocation.Header,
+//        Description = "ضع رمز الـ JWT هنا (سيتم تعبئته تلقائيًا بعد تسجيل الدخول)"
+//    });
+
+//    // ربط الـ Security Requirement بكل الـ endpoints
+//    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+//    {
+//        {
+//            new OpenApiSecurityScheme
+//            {
+//                Reference = new OpenApiReference
+//                {
+//                    Type = ReferenceType.SecurityScheme,
+//                    Id = "Bearer"
+//                },
+//                Scheme = "bearer",
+//                Name = "Authorization",
+//                In = ParameterLocation.Header
+//            },
+//            Array.Empty<string>()
+//        }
+//    });
+//});
+
+//var app = builder.Build();
+
+//// Middleware
+//if (true)
+//{
+//    app.UseSwagger();
+//    app.UseSwaggerUI(c =>
+//    {
+//        c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1");
+//        c.RoutePrefix = string.Empty;
+//    });
+//}
+
+
+
+//app.UseHttpsRedirection();
+//app.UseStaticFiles();
+
+
+//app.UseAuthentication();
+//app.UseAuthorization();
+
+
+//app.MapControllers();
+
+//app.Run();
+
+//#endregion
+
+
+
+
+
 using InfrastructureLayer.DependencyInjection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Http.Features; // لازم لـ FormOptions
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// -------------------------------------------------
 // Services
-
-builder.Services
-    .AddControllers()
+// -------------------------------------------------
+builder.Services.AddControllers()
     .AddNewtonsoftJson(options =>
     {
         options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
     });
 
+// Swagger + JWT
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Orsync API", Version = "v1" });
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "ضع رمز الـ JWT هنا"
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
 
-// إضافة البنية التحتية
+// Infrastructure & Services
 builder.Services.AddInfrastructure(builder.Configuration);
 
-// إعداد JWT
+// JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey not configured");
 
@@ -217,7 +377,7 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// إعداد CORS مرة واحدة فقط
+// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -228,69 +388,38 @@ builder.Services.AddCors(options =>
     });
 });
 
-// زيادة الحد الأقصى لحجم الملفات المرفوعة
+// File upload limit
 builder.Services.Configure<FormOptions>(options =>
 {
     options.MultipartBodyLengthLimit = 100_000_000; // 100 MB
 });
 
-// إعداد Swagger مع JWT + Authorize تلقائي
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "My API", Version = "v1" });
-
-    // إعداد JWT Bearer
-    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Name = "Authorization",
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT",
-        In = ParameterLocation.Header,
-        Description = "ضع رمز الـ JWT هنا (سيتم تعبئته تلقائيًا بعد تسجيل الدخول)"
-    });
-
-    // ربط الـ Security Requirement بكل الـ endpoints
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                },
-                Scheme = "bearer",
-                Name = "Authorization",
-                In = ParameterLocation.Header
-            },
-            Array.Empty<string>()
-        }
-    });
-});
-
 var app = builder.Build();
 
+// -------------------------------------------------
 // Middleware
-if (true)
+// -------------------------------------------------
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1");
-        c.RoutePrefix = string.Empty;
-    });
-}
-
-
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Orsync API V1");
+    c.RoutePrefix = string.Empty;
+});
 
 app.UseHttpsRedirection();
+
+// Static files for uploads
 app.UseStaticFiles();
-app.UseCors("AllowAll"); // تأكد إنك تستخدم نفس الاسم هنا
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(builder.Environment.ContentRootPath, "uploads")),
+    RequestPath = "/uploads"
+});
+
+app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
- 
 
 app.MapControllers();
 
