@@ -3,6 +3,7 @@ using ApplicationLayer.Interfaces.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using System.Net;
 using System.Text;
 
 namespace InfrastructureLayer.Services;
@@ -42,32 +43,70 @@ public class MLApiService : IMLApiService
             _logger.LogInformation("========================================");
             _logger.LogInformation("Calling ML API: {Url}", requestUrl);
 
-            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUrl);
+            var responseContent = await SendJsonRequestAsync(requestUrl, request, cancellationToken);
 
-            if (!string.IsNullOrWhiteSpace(_mlApiKey))
-                httpRequest.Headers.Add("X-API-Key", _mlApiKey);
-
-            var payload = new
+            if (IsMissingTherapeuticAreaValidationError(responseContent))
             {
-                therapeutic_area = request.TherapeuticArea,
-                specific_product = request.SpecificProduct,
-                indication = request.Indication,
-                target_geography = request.TargetGeography ?? new List<string>(),
-                research_depth = request.ResearchDepth ?? new List<string>(),
-                files = request.Files?.Select(f => new
-                {
-                    file_id = f.FileId,
-                    file_name = f.FileName,
-                    file_url = f.FileUrl,
-                    file_size = f.FileSize,
-                    file_extension = f.FileExtension
-                }) ?? Enumerable.Empty<object>()
-            };
+                _logger.LogWarning("ML API rejected JSON payload schema; retrying with multipart/form-data payload.");
+                responseContent = await SendMultipartRequestAsync(requestUrl, request, cancellationToken);
+            }
 
-            var payloadJson = JsonConvert.SerializeObject(payload);
-            httpRequest.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
+            var result = JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(responseContent);
 
-            var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            if (result == null)
+                throw new Exception("Invalid response from ML API");
+
+            _logger.LogInformation("? ML Analysis generated successfully. ID: {Id}", result.Id);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ML API call failed");
+            throw;
+        }
+    }
+
+    private async Task<string> SendJsonRequestAsync(string requestUrl, MLApiRequestDto request, CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUrl);
+
+        if (!string.IsNullOrWhiteSpace(_mlApiKey))
+            httpRequest.Headers.Add("X-API-Key", _mlApiKey);
+
+        var payload = new
+        {
+            therapeutic_area = request.TherapeuticArea,
+            specific_product = request.SpecificProduct,
+            indication = request.Indication,
+            target_geography = request.TargetGeography ?? new List<string>(),
+            research_depth = request.ResearchDepth ?? new List<string>(),
+            files = request.Files?.Select(f => new
+            {
+                file_id = f.FileId,
+                file_name = f.FileName,
+                file_url = f.FileUrl,
+                file_size = f.FileSize,
+                file_extension = f.FileExtension
+            }) ?? Enumerable.Empty<object>()
+        };
+
+        var payloadJson = JsonConvert.SerializeObject(payload);
+        httpRequest.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
+
+        var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        _logger.LogInformation("ML API Status (JSON): {Status}", response.StatusCode);
+
+        if (response.IsSuccessStatusCode)
+            return responseContent;
+
+        if (response.StatusCode != HttpStatusCode.UnprocessableEntity)
+        {
+            _logger.LogError("ML API ERROR RESPONSE (JSON): {Response}", responseContent);
+            throw new Exception($"ML API Error ({response.StatusCode}): {responseContent}");
+        }
 
         return responseContent;
     }
@@ -82,7 +121,8 @@ public class MLApiService : IMLApiService
         using var form = new MultipartFormDataContent();
         form.Add(new StringContent(request.TherapeuticArea ?? string.Empty), "therapeutic_area");
 
-            var result = JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(responseContent);
+        if (!string.IsNullOrWhiteSpace(request.SpecificProduct))
+            form.Add(new StringContent(request.SpecificProduct), "specific_product");
 
         if (!string.IsNullOrWhiteSpace(request.Indication))
             form.Add(new StringContent(request.Indication), "indication");
@@ -134,4 +174,3 @@ public class MLApiService : IMLApiService
         }
     }
 }
-
