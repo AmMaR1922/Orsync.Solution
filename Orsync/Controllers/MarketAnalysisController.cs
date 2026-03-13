@@ -545,10 +545,8 @@ using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Entities;
 using DomainLayer.Enums;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
-using System.Security.Claims;
 
  
 
@@ -556,7 +554,6 @@ namespace Orsync.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
 public class MarketAnalysisController : ControllerBase
 {
     private readonly IAnalysisRepository _analysisRepository;
@@ -579,8 +576,7 @@ public class MarketAnalysisController : ControllerBase
         _logger = logger;
     }
 
-    private string GetUserId() =>
-        User.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new UnauthorizedAccessException("User ID not found");
+    private const string GuestUserId = "anonymous";
 
     [HttpPost("generate")]
     [Consumes("multipart/form-data")]
@@ -599,7 +595,7 @@ public class MarketAnalysisController : ControllerBase
             if (!geography.Any()) return BadRequest("At least one Geography must be selected");
             if (!researchDepth.Any()) return BadRequest("At least one ResearchDepth must be selected");
 
-            var userId = GetUserId();
+            var userId = GuestUserId;
             var mlApiFiles = new List<MLApiFileDto>();
             var fileIds = new List<Guid>();
 
@@ -679,7 +675,7 @@ public class MarketAnalysisController : ControllerBase
     {
         try
         {
-            var userId = GetUserId();
+            var userId = GuestUserId;
 
             var analyses = await _analysisRepository.GetByUserIdAsync(userId);
 
@@ -753,7 +749,7 @@ public class MarketAnalysisController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(string id)
     {
-        var userId = GetUserId();
+        var userId = GuestUserId;
 
         var analysis = await FindAnalysisAsync(id, userId);
 
@@ -772,15 +768,12 @@ public class MarketAnalysisController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id)
     {
-        var userId = GetUserId();
+        var userId = GuestUserId;
 
         var analysis = await FindAnalysisAsync(id, userId);
 
         if (analysis == null)
             return NotFound();
-
-        if (analysis.UserId != userId)
-            return Forbid();
 
         await _analysisRepository.DeleteAsync(analysis.Id);
 
