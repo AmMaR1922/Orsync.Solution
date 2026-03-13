@@ -635,13 +635,30 @@ public class MarketAnalysisController : ControllerBase
             };
 
             var mlRawResponse = await _mlApiService.GenerateAnalysisRawAsync(mlApiRequest);
+            var mlResponseObject = JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JObject>(mlRawResponse)
+                                   ?? new Newtonsoft.Json.Linq.JObject();
+
+            if (mlApiFiles.Any())
+            {
+                mlResponseObject["uploaded_files"] = Newtonsoft.Json.Linq.JArray.FromObject(
+                    mlApiFiles.Select(f => new UploadedFileUrlDto
+                    {
+                        FileId = f.FileId,
+                        FileName = f.FileName,
+                        FileUrl = f.FileUrl,
+                        FileSize = f.FileSize,
+                        FileExtension = f.FileExtension
+                    }).ToList());
+            }
+
+            var finalResponseJson = mlResponseObject.ToString();
 
             var analysis = new Analysis(userId, therapeuticArea.Trim(), product ?? "General", indication ?? "General", geography, researchDepth);
-            analysis.SetResponse(mlRawResponse);
+            analysis.SetResponse(finalResponseJson);
             if (fileIds.Any()) analysis.SetFileIds(fileIds);
             await _analysisRepository.AddAsync(analysis);
 
-            return Content(mlRawResponse, "application/json");
+            return Content(finalResponseJson, "application/json");
         }
         catch (Exception ex)
         {
@@ -738,6 +755,9 @@ public class MarketAnalysisController : ControllerBase
 
         if (analysis == null)
             return NotFound();
+
+        if (analysis.UserId != userId)
+            return Forbid();
 
         return Content(analysis.ResponseJson, "application/json");
     }
