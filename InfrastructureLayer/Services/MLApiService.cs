@@ -143,32 +143,8 @@ public class MLApiService : IMLApiService
 
         foreach (var file in request.Files ?? Enumerable.Empty<MLApiFileDto>())
         {
-            if (string.IsNullOrWhiteSpace(file.FileUrl))
-                continue;
-
-            try
-            {
-                using var fileResponse = await _httpClient.GetAsync(file.FileUrl, cancellationToken);
-
-                if (!fileResponse.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning("Skipping file upload to ML API. Could not fetch file URL: {FileUrl}. Status: {Status}", file.FileUrl, fileResponse.StatusCode);
-                    continue;
-                }
-
-                var stream = await fileResponse.Content.ReadAsStreamAsync(cancellationToken);
-                var streamContent = new StreamContent(stream);
-
-                var contentType = fileResponse.Content.Headers.ContentType?.MediaType;
-                streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
-                    string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType);
-
-                form.Add(streamContent, "files", string.IsNullOrWhiteSpace(file.FileName) ? "upload.bin" : file.FileName);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Skipping file upload to ML API for URL: {FileUrl}", file.FileUrl);
-            }
+            form.Add(new StringContent(file.FileUrl), "file_urls");
+            form.Add(new StringContent(file.FileName), "file_names");
         }
 
         httpRequest.Content = form;
