@@ -545,10 +545,8 @@ using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Entities;
 using DomainLayer.Enums;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
-using System.Security.Claims;
 
  
 
@@ -556,7 +554,6 @@ namespace Orsync.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
 public class MarketAnalysisController : ControllerBase
 {
     private readonly IAnalysisRepository _analysisRepository;
@@ -579,8 +576,7 @@ public class MarketAnalysisController : ControllerBase
         _logger = logger;
     }
 
-    private string GetUserId() =>
-        User.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new UnauthorizedAccessException("User ID not found");
+    private const string GuestUserId = "anonymous";
 
     [HttpPost("generate")]
     [Consumes("multipart/form-data")]
@@ -599,7 +595,7 @@ public class MarketAnalysisController : ControllerBase
             if (!geography.Any()) return BadRequest("At least one Geography must be selected");
             if (!researchDepth.Any()) return BadRequest("At least one ResearchDepth must be selected");
 
-            var userId = GetUserId();
+            var userId = GuestUserId;
             var mlApiFiles = new List<MLApiFileDto>();
             var fileIds = new List<Guid>();
 
@@ -638,23 +634,14 @@ public class MarketAnalysisController : ControllerBase
                 Files = mlApiFiles
             };
 
-            var mlResponse = await _mlApiService.GenerateAnalysisAsync(mlApiRequest);
-
-            mlResponse.UploadedFiles = mlApiFiles.Select(f => new UploadedFileUrlDto
-            {
-                FileId = f.FileId,
-                FileName = f.FileName,
-                FileUrl = f.FileUrl,
-                FileSize = f.FileSize,
-                FileExtension = f.FileExtension
-            }).ToList();
+            var mlRawResponse = await _mlApiService.GenerateAnalysisRawAsync(mlApiRequest);
 
             var analysis = new Analysis(userId, therapeuticArea.Trim(), product ?? "General", indication ?? "General", geography, researchDepth);
-            analysis.SetResponse(JsonConvert.SerializeObject(mlResponse));
+            analysis.SetResponse(mlRawResponse);
             if (fileIds.Any()) analysis.SetFileIds(fileIds);
             await _analysisRepository.AddAsync(analysis);
 
-            return Ok(mlResponse);
+            return Content(mlRawResponse, "application/json");
         }
         catch (Exception ex)
         {
@@ -671,7 +658,7 @@ public class MarketAnalysisController : ControllerBase
     {
         try
         {
-            var userId = GetUserId();
+            var userId = GuestUserId;
 
             var analyses = await _analysisRepository.GetByUserIdAsync(userId);
 
@@ -681,7 +668,7 @@ public class MarketAnalysisController : ControllerBase
                 {
                     try
                     {
-                        return JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(a.ResponseJson);
+                        return JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JToken>(a.ResponseJson);
                     }
                     catch (Exception ex)
                     {
@@ -692,7 +679,7 @@ public class MarketAnalysisController : ControllerBase
                 .Where(r => r != null)
                 .ToList();
 
-            return Ok(responses);
+            return Content(JsonConvert.SerializeObject(responses), "application/json");
         }
         catch (Exception ex)
         {
@@ -722,8 +709,21 @@ public class MarketAnalysisController : ControllerBase
             var analyses = await _analysisRepository.GetByUserIdAsync(userId);
 
             analysis = analyses.FirstOrDefault(a =>
-                !string.IsNullOrWhiteSpace(a.ResponseJson) &&
-                a.ResponseJson.Contains($"\"id\":\"{id}\""));
+            {
+                if (string.IsNullOrWhiteSpace(a.ResponseJson))
+                    return false;
+
+                try
+                {
+                    var token = JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JToken>(a.ResponseJson);
+                    var responseId = token?["id"]?.ToString();
+                    return string.Equals(responseId, id, StringComparison.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    return false;
+                }
+            });
         }
 
         return analysis;
@@ -732,20 +732,14 @@ public class MarketAnalysisController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(string id)
     {
-        var userId = GetUserId();
+        var userId = GuestUserId;
 
         var analysis = await FindAnalysisAsync(id, userId);
 
         if (analysis == null)
             return NotFound();
 
-        if (analysis.UserId != userId)
-            return Forbid();
-
-        var response =
-            JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(analysis.ResponseJson);
-
-        return Ok(response);
+        return Content(analysis.ResponseJson, "application/json");
     }
 
     // ============================================================
@@ -754,15 +748,12 @@ public class MarketAnalysisController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id)
     {
-        var userId = GetUserId();
+        var userId = GuestUserId;
 
         var analysis = await FindAnalysisAsync(id, userId);
 
         if (analysis == null)
             return NotFound();
-
-        if (analysis.UserId != userId)
-            return Forbid();
 
         await _analysisRepository.DeleteAsync(analysis.Id);
 
