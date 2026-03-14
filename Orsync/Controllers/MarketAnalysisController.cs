@@ -583,26 +583,6 @@ public class MarketAnalysisController : ControllerBase
 
     private const string GuestUserId = "anonymous";
 
-    private static string? ExtractReportId(string? responseJson)
-    {
-        if (string.IsNullOrWhiteSpace(responseJson))
-            return null;
-
-        try
-        {
-            var token = JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JToken>(responseJson);
-            return token?["id"]?.ToString();
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static bool HasReportId(string? responseJson) =>
-        !string.IsNullOrWhiteSpace(ExtractReportId(responseJson));
-
-
     [HttpPost("generate")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(100_000_000)]
@@ -660,19 +640,30 @@ public class MarketAnalysisController : ControllerBase
             };
 
             var mlRawResponse = await _mlApiService.GenerateAnalysisRawAsync(mlApiRequest);
+            var mlResponseObject = JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JObject>(mlRawResponse)
+                                   ?? new Newtonsoft.Json.Linq.JObject();
 
-            if (!HasReportId(mlRawResponse))
+            if (mlApiFiles.Any())
             {
-                _logger.LogError("ML API response did not include required report id. Response: {Response}", mlRawResponse);
-                return StatusCode(502, new { error = "Bad Gateway", message = "ML API response missing required 'id' field" });
+                mlResponseObject["uploaded_files"] = Newtonsoft.Json.Linq.JArray.FromObject(
+                    mlApiFiles.Select(f => new UploadedFileUrlDto
+                    {
+                        FileId = f.FileId,
+                        FileName = f.FileName,
+                        FileUrl = f.FileUrl,
+                        FileSize = f.FileSize,
+                        FileExtension = f.FileExtension
+                    }).ToList());
             }
 
+            var finalResponseJson = mlResponseObject.ToString();
+
             var analysis = new Analysis(userId, therapeuticArea.Trim(), product ?? "General", indication ?? "General", geography, researchDepth);
-            analysis.SetResponse(mlRawResponse);
+            analysis.SetResponse(finalResponseJson);
             if (fileIds.Any()) analysis.SetFileIds(fileIds);
             await _analysisRepository.AddAsync(analysis);
 
-            return Content(mlRawResponse, "application/json");
+            return Content(finalResponseJson, "application/json");
         }
         catch (Exception ex)
         {
@@ -689,7 +680,9 @@ public class MarketAnalysisController : ControllerBase
     {
         try
         {
-            var analyses = await _analysisRepository.GetAllAsync();
+            var userId = GuestUserId;
+
+            var analyses = await _analysisRepository.GetByUserIdAsync(userId);
 
             var responses = analyses
                 .Where(a => !string.IsNullOrWhiteSpace(a.ResponseJson) && HasReportId(a.ResponseJson))
@@ -742,8 +735,16 @@ public class MarketAnalysisController : ControllerBase
                 if (string.IsNullOrWhiteSpace(a.ResponseJson))
                     return false;
 
-                var responseId = ExtractReportId(a.ResponseJson);
-                return string.Equals(responseId, id, StringComparison.OrdinalIgnoreCase);
+                try
+                {
+                    var token = JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JToken>(a.ResponseJson);
+                    var responseId = token?["id"]?.ToString();
+                    return string.Equals(responseId, id, StringComparison.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    return false;
+                }
             });
         }
 
@@ -758,10 +759,15 @@ public class MarketAnalysisController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(string id)
     {
-        var analysis = await FindAnalysisAsync(id);
+        var userId = GuestUserId;
+
+        var analysis = await FindAnalysisAsync(id, userId);
 
         if (analysis == null)
             return NotFound();
+
+        if (analysis.UserId != userId)
+            return Forbid();
 
         return Content(analysis.ResponseJson, "application/json");
     }
@@ -772,7 +778,9 @@ public class MarketAnalysisController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id)
     {
-        var analysis = await FindAnalysisAsync(id);
+        var userId = GuestUserId;
+
+        var analysis = await FindAnalysisAsync(id, userId);
 
         if (analysis == null)
             return NotFound();
