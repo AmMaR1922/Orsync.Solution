@@ -3,8 +3,6 @@ using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Entities;
 using DomainLayer.Enums;
-using InfrastructureLayer.Services;
-using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 
@@ -159,40 +157,9 @@ public class MarketAnalysisController : ControllerBase
             if (fileIds.Any())
                 analysis.SetFileIds(fileIds);
 
-            try
-            {
-                await _analysisRepository.AddAsync(analysis);
-            }
-            catch (Exception dbEx)
-            {
-                _logger.LogWarning(dbEx, "Could not persist analysis to database. Returning ML response without storage.");
-                mlResponseObject["storage_warning"] = "Analysis generated but could not be saved to database (connection issue).";
-                return Content(mlResponseObject.ToString(), "application/json");
-            }
+            await _analysisRepository.AddAsync(analysis);
 
             return Content(finalResponseJson, "application/json");
-        }
-        catch (MlApiHttpException ex) when ((int)ex.StatusCode >= 500)
-        {
-            _logger.LogError(ex, "Upstream ML API server error in Generate");
-            return StatusCode(502, new
-            {
-                error = "Bad Gateway",
-                message = "ML API is temporarily unavailable. Please try again in a moment.",
-                upstream_status = (int)ex.StatusCode,
-                upstream_response = ex.ResponseBody
-            });
-        }
-        catch (MlApiHttpException ex)
-        {
-            _logger.LogError(ex, "Upstream ML API error in Generate");
-            return StatusCode(502, new
-            {
-                error = "Bad Gateway",
-                message = ex.Message,
-                upstream_status = (int)ex.StatusCode,
-                upstream_response = ex.ResponseBody
-            });
         }
         catch (Exception ex)
         {
@@ -226,11 +193,6 @@ public class MarketAnalysisController : ControllerBase
                 .ToList();
 
             return Content(JsonConvert.SerializeObject(responses), "application/json");
-        }
-        catch (SqlException ex)
-        {
-            _logger.LogError(ex, "Database unavailable in GetAll");
-            return StatusCode(503, new { error = "Service Unavailable", message = "Database connection is unavailable." });
         }
         catch (Exception ex)
         {
