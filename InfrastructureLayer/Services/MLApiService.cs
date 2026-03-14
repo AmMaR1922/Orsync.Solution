@@ -57,22 +57,12 @@ public class MLApiService : IMLApiService
             _logger.LogInformation("========================================");
             _logger.LogInformation("Calling ML API: {Url}", requestUrl);
 
-            string responseContent;
+            var responseContent = await SendJsonRequestAsync(requestUrl, request, cancellationToken);
 
-            try
+            if (IsMissingTherapeuticAreaValidationError(responseContent))
             {
-                responseContent = await SendJsonRequestAsync(requestUrl, request, cancellationToken);
-
-                if (IsMissingTherapeuticAreaValidationError(responseContent))
-                {
-                    _logger.LogWarning("ML API rejected JSON payload schema; retrying with multipart/form-data payload.");
-                    responseContent = await SendMultipartWithRetryAsync(requestUrl, request, cancellationToken);
-                }
-            }
-            catch (Exception jsonEx)
-            {
-                _logger.LogWarning(jsonEx, "JSON request failed; retrying with multipart/form-data payload.");
-                responseContent = await SendMultipartWithRetryAsync(requestUrl, request, cancellationToken);
+                _logger.LogWarning("ML API rejected JSON payload schema; retrying with multipart/form-data payload.");
+                responseContent = await SendMultipartRequestAsync(requestUrl, request, cancellationToken);
             }
 
             _logger.LogInformation("✓ ML Analysis generated successfully");
@@ -129,26 +119,6 @@ public class MLApiService : IMLApiService
         return responseContent;
     }
 
-    private async Task<string> SendMultipartWithRetryAsync(string requestUrl, MLApiRequestDto request, CancellationToken cancellationToken)
-    {
-        const int maxAttempts = 3;
-
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            try
-            {
-                return await SendMultipartRequestAsync(requestUrl, request, cancellationToken);
-            }
-            catch (Exception ex) when (attempt < maxAttempts && ex.Message.Contains("InternalServerError", StringComparison.OrdinalIgnoreCase))
-            {
-                _logger.LogWarning(ex, "Multipart attempt {Attempt}/{MaxAttempts} failed with upstream 500. Retrying...", attempt, maxAttempts);
-                await Task.Delay(TimeSpan.FromSeconds(attempt * 2), cancellationToken);
-            }
-        }
-
-        return await SendMultipartRequestAsync(requestUrl, request, cancellationToken);
-    }
-
     private async Task<string> SendMultipartRequestAsync(string requestUrl, MLApiRequestDto request, CancellationToken cancellationToken)
     {
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUrl);
@@ -173,32 +143,8 @@ public class MLApiService : IMLApiService
 
         foreach (var file in request.Files ?? Enumerable.Empty<MLApiFileDto>())
         {
-            if (string.IsNullOrWhiteSpace(file.FileUrl))
-                continue;
-
-            try
-            {
-                using var fileResponse = await _httpClient.GetAsync(file.FileUrl, cancellationToken);
-
-                if (!fileResponse.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning("Skipping file upload to ML API. Could not fetch file URL: {FileUrl}. Status: {Status}", file.FileUrl, fileResponse.StatusCode);
-                    continue;
-                }
-
-                var stream = await fileResponse.Content.ReadAsStreamAsync(cancellationToken);
-                var streamContent = new StreamContent(stream);
-
-                var contentType = fileResponse.Content.Headers.ContentType?.MediaType;
-                streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
-                    string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType);
-
-                form.Add(streamContent, "files", string.IsNullOrWhiteSpace(file.FileName) ? "upload.bin" : file.FileName);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Skipping file upload to ML API for URL: {FileUrl}", file.FileUrl);
-            }
+            form.Add(new StringContent(file.FileUrl), "file_urls");
+            form.Add(new StringContent(file.FileName), "file_names");
         }
 
         httpRequest.Content = form;
