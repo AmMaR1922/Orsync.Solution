@@ -65,58 +65,28 @@ public class MLApiService : IMLApiService
         MLApiRequestDto request,
         CancellationToken cancellationToken = default)
     {
-        Exception? lastException = null;
-
-        foreach (var baseUrl in GetCandidateBaseUrls())
+        try
         {
-            var requestUrl = $"{baseUrl}/api/v1/report";
-            _logger.LogInformation("========================================");
-            _logger.LogInformation("Calling ML API: {Url}", requestUrl);
+            var requestUrl = $"{_mlApiBaseUrl}/api/v1/report";
 
-            try
-            {
-                var responseContent = await SendJsonRequestAsync(requestUrl, request, cancellationToken);
+        var result = JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(responseContent);
 
-                if (IsMissingTherapeuticAreaValidationError(responseContent))
-                {
-                    _logger.LogWarning("ML API rejected JSON payload schema; retrying with multipart/form-data payload.");
-                    responseContent = await SendMultipartWithRetryAsync(requestUrl, request, cancellationToken);
-                }
+            var responseContent = await SendJsonRequestAsync(requestUrl, request, cancellationToken);
 
-                _logger.LogInformation("✓ ML Analysis generated successfully");
-                return responseContent;
-            }
-            catch (HttpRequestException ex)
+            if (IsMissingTherapeuticAreaValidationError(responseContent))
             {
-                lastException = ex;
-                _logger.LogWarning(ex, "ML API host/network failure for base URL {BaseUrl}. Trying next candidate if available.", baseUrl);
+                _logger.LogWarning("ML API rejected JSON payload schema; retrying with multipart/form-data payload.");
+                responseContent = await SendMultipartRequestAsync(requestUrl, request, cancellationToken);
             }
-            catch (MlApiHttpException ex) when ((int)ex.StatusCode >= 500)
-            {
-                lastException = ex;
-                _logger.LogWarning(ex, "ML API server error for base URL {BaseUrl}. Trying multipart fallback/next candidate.", baseUrl);
 
-                try
-                {
-                    var responseContent = await SendMultipartWithRetryAsync(requestUrl, request, cancellationToken);
-                    _logger.LogInformation("✓ ML Analysis generated successfully via multipart fallback");
-                    return responseContent;
-                }
-                catch (Exception fallbackEx)
-                {
-                    lastException = fallbackEx;
-                    _logger.LogWarning(fallbackEx, "Multipart fallback failed for base URL {BaseUrl}. Trying next candidate.", baseUrl);
-                }
-            }
-            catch (Exception ex)
-            {
-                lastException = ex;
-                _logger.LogWarning(ex, "ML API call failed for base URL {BaseUrl}. Trying next candidate if available.", baseUrl);
-            }
+            _logger.LogInformation("✓ ML Analysis generated successfully");
+            return responseContent;
         }
-
-        _logger.LogError(lastException, "ML API call failed for all configured base URLs");
-        throw lastException ?? new Exception("ML API call failed for all configured base URLs");
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ML API call failed");
+            throw;
+        }
     }
 
     private async Task<string> SendJsonRequestAsync(string requestUrl, MLApiRequestDto request, CancellationToken cancellationToken)
@@ -157,30 +127,10 @@ public class MLApiService : IMLApiService
         if (response.StatusCode != HttpStatusCode.UnprocessableEntity)
         {
             _logger.LogError("ML API ERROR RESPONSE (JSON): {Response}", responseContent);
-            throw new MlApiHttpException(response.StatusCode, responseContent);
+            throw new Exception($"ML API Error ({response.StatusCode}): {responseContent}");
         }
 
         return responseContent;
-    }
-
-    private async Task<string> SendMultipartWithRetryAsync(string requestUrl, MLApiRequestDto request, CancellationToken cancellationToken)
-    {
-        const int maxAttempts = 3;
-
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            try
-            {
-                return await SendMultipartRequestAsync(requestUrl, request, cancellationToken);
-            }
-            catch (MlApiHttpException ex) when (attempt < maxAttempts && (int)ex.StatusCode >= 500)
-            {
-                _logger.LogWarning(ex, "Multipart attempt {Attempt}/{MaxAttempts} failed with upstream {Status}. Retrying...", attempt, maxAttempts, ex.StatusCode);
-                await Task.Delay(TimeSpan.FromSeconds(attempt * 2), cancellationToken);
-            }
-        }
-
-        return await SendMultipartRequestAsync(requestUrl, request, cancellationToken);
     }
 
     private async Task<string> SendMultipartRequestAsync(string requestUrl, MLApiRequestDto request, CancellationToken cancellationToken)
@@ -207,32 +157,8 @@ public class MLApiService : IMLApiService
 
         foreach (var file in request.Files ?? Enumerable.Empty<MLApiFileDto>())
         {
-            if (string.IsNullOrWhiteSpace(file.FileUrl))
-                continue;
-
-            try
-            {
-                using var fileResponse = await _httpClient.GetAsync(file.FileUrl, cancellationToken);
-
-                if (!fileResponse.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning("Skipping file upload to ML API. Could not fetch file URL: {FileUrl}. Status: {Status}", file.FileUrl, fileResponse.StatusCode);
-                    continue;
-                }
-
-                var stream = await fileResponse.Content.ReadAsStreamAsync(cancellationToken);
-                var streamContent = new StreamContent(stream);
-
-                var contentType = fileResponse.Content.Headers.ContentType?.MediaType;
-                streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
-                    string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType);
-
-                form.Add(streamContent, "files", string.IsNullOrWhiteSpace(file.FileName) ? "upload.bin" : file.FileName);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Skipping file upload to ML API for URL: {FileUrl}", file.FileUrl);
-            }
+            form.Add(new StringContent(file.FileUrl), "file_urls");
+            form.Add(new StringContent(file.FileName), "file_names");
         }
 
         httpRequest.Content = form;
@@ -245,7 +171,7 @@ public class MLApiService : IMLApiService
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogError("ML API ERROR RESPONSE (Multipart): {Response}", responseContent);
-            throw new MlApiHttpException(response.StatusCode, responseContent);
+            throw new Exception($"ML API Error ({response.StatusCode}): {responseContent}");
         }
 
         return responseContent;
@@ -255,23 +181,6 @@ public class MLApiService : IMLApiService
     {
         return responseContent.Contains("\"therapeutic_area\"", StringComparison.OrdinalIgnoreCase)
                && responseContent.Contains("\"missing\"", StringComparison.OrdinalIgnoreCase);
-    }
-
-
-    private IEnumerable<string> GetCandidateBaseUrls()
-    {
-        var urls = new List<string>();
-
-        if (!string.IsNullOrWhiteSpace(_mlApiBaseUrl))
-            urls.Add(_mlApiBaseUrl.TrimEnd('/'));
-
-        if (!string.IsNullOrWhiteSpace(_mlApiFallbackBaseUrl))
-            urls.Add(_mlApiFallbackBaseUrl.TrimEnd('/'));
-
-        if (!string.IsNullOrWhiteSpace(_mlApiBaseUrl) && _mlApiBaseUrl.Contains("-v2", StringComparison.OrdinalIgnoreCase))
-            urls.Add(_mlApiBaseUrl.Replace("-v2", string.Empty, StringComparison.OrdinalIgnoreCase).TrimEnd('/'));
-
-        return urls.Distinct(StringComparer.OrdinalIgnoreCase);
     }
 
     public async Task<bool> HealthCheckAsync()
