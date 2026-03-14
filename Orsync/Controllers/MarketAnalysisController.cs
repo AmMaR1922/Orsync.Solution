@@ -1,4 +1,4 @@
-﻿//using ApplicationLayer.Contracts.DTOs;
+//using ApplicationLayer.Contracts.DTOs;
 //using ApplicationLayer.Interfaces.Repositories;
 //using ApplicationLayer.Interfaces.Services;
 //using DomainLayer.Entities;
@@ -596,9 +596,11 @@ public class MarketAnalysisController : ControllerBase
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(therapeuticArea)) return BadRequest("TherapeuticArea is required");
-            if (!geography.Any()) return BadRequest("At least one Geography must be selected");
-            if (!researchDepth.Any()) return BadRequest("At least one ResearchDepth must be selected");
+            if (string.IsNullOrWhiteSpace(therapeuticArea))
+                return BadRequest("TherapeuticArea is required");
+
+            if (!geography.Any())
+                return BadRequest("At least one Geography must be selected");
 
             var userId = GuestUserId;
             var mlApiFiles = new List<MLApiFileDto>();
@@ -607,13 +609,19 @@ public class MarketAnalysisController : ControllerBase
             if (files != null && files.Any())
             {
                 var batchId = Guid.NewGuid();
+
                 foreach (var file in files.Where(f => f.Length > 0))
                 {
                     using var stream = file.OpenReadStream();
                     var uploadResult = await _fileStorageService.UploadFileAsync(stream, file.FileName, file.ContentType);
 
                     var uploadedFile = new UploadedFile(
-                        userId, file.FileName, uploadResult.FilePath, file.Length, Path.GetExtension(file.FileName), batchId);
+                        userId,
+                        file.FileName,
+                        uploadResult.FilePath,
+                        file.Length,
+                        Path.GetExtension(file.FileName),
+                        batchId);
 
                     await _fileRepository.AddAsync(uploadedFile);
 
@@ -671,10 +679,7 @@ public class MarketAnalysisController : ControllerBase
             return StatusCode(500, new { error = "Internal Server Error", message = ex.Message });
         }
     }
- 
-    // ============================================================
-    // ✅ GET ALL
-    // ============================================================
+
     [HttpGet("GetAll")]
     public async Task<IActionResult> GetAll()
     {
@@ -706,12 +711,7 @@ public class MarketAnalysisController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "GetAll Error");
-
-            return StatusCode(500, new
-            {
-                error = ex.Message,
-                stack = ex.StackTrace
-            });
+            return StatusCode(500, new { error = ex.Message, stack = ex.StackTrace });
         }
     }
 
@@ -720,9 +720,12 @@ public class MarketAnalysisController : ControllerBase
     // ============================================================
     private async Task<Analysis?> FindAnalysisAsync(string id)
     {
-        Analysis? analysis = null;
-
         if (Guid.TryParse(id, out var guidId))
+            return await _analysisRepository.GetByIdAsync(guidId);
+
+        var analyses = await _analysisRepository.GetAllAsync();
+
+        return analyses.FirstOrDefault(a =>
         {
             analysis = await _analysisRepository.GetByIdAsync(guidId);
         }
@@ -748,7 +751,10 @@ public class MarketAnalysisController : ControllerBase
             });
         }
 
-        return analysis;
+    private async Task<Analysis?> FindAnalysisAsync(string id, string userId)
+    {
+        _ = userId;
+        return await FindAnalysisAsync(id);
     }
 
     private async Task<Analysis?> FindAnalysisAsync(string id, string userId)
@@ -772,9 +778,6 @@ public class MarketAnalysisController : ControllerBase
         return Content(analysis.ResponseJson, "application/json");
     }
 
-    // ============================================================
-    // ✅ DELETE (Guid or ML Report Id)
-    // ============================================================
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id)
     {
