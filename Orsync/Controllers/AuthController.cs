@@ -1,7 +1,6 @@
 ﻿using ApplicationLayer.Contracts.DTOs;
 using InfrastructureLayer.Identity;
 using InfrastructureLayer.Services;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -160,11 +159,12 @@ public class AuthController : ControllerBase
     /// تسجيل الخروج (Logout) - حذف Refresh Token
     /// </summary>
     [HttpPost("logout")]
-    [Authorize]
-    public async Task<IActionResult> Logout()
+    public async Task<IActionResult> Logout([FromBody] RefreshTokenRequest request)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var user = await _userManager.FindByIdAsync(userId!);
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+            return BadRequest(new { error = "Refresh token is required" });
+
+        var user = _userManager.Users.FirstOrDefault(u => u.RefreshToken == request.RefreshToken);
 
         if (user != null)
         {
@@ -180,11 +180,12 @@ public class AuthController : ControllerBase
     /// الحصول على معلومات المستخدم الحالي
     /// </summary>
     [HttpGet("me")]
-    [Authorize]
-    public async Task<IActionResult> GetCurrentUser()
+    public async Task<IActionResult> GetCurrentUser([FromQuery] string userId)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var user = await _userManager.FindByIdAsync(userId!);
+        if (string.IsNullOrWhiteSpace(userId))
+            return BadRequest(new { error = "userId is required" });
+
+        var user = await _userManager.FindByIdAsync(userId);
 
         if (user == null)
             return NotFound(new { error = "User not found" });
