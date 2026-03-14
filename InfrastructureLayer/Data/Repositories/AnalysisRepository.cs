@@ -34,6 +34,14 @@ public class AnalysisRepository : IAnalysisRepository
             .ToListAsync();
     }
 
+
+    public async Task<List<Analysis>> GetAllAsync()
+    {
+        return await _context.Analyses
+            .OrderByDescending(a => a.CreatedAt)
+            .ToListAsync();
+    }
+
     public async Task UpdateAsync(Analysis analysis)
     {
         _context.Analyses.Update(analysis);
