@@ -413,7 +413,7 @@
 //            var userId = GetUserId();
 //            _logger.LogInformation("Fetching all analyses for user: {UserId}", userId);
 
-//            var analyses = await _analysisRepository.GetByUserIdAsync(userId);
+//            var analyses = await _analysisRepository.GetAllAsync();
 
 //            _logger.LogInformation("Found {Count} analyses", analyses.Count);
 
@@ -713,7 +713,7 @@ public class MarketAnalysisController : ControllerBase
     // ============================================================
     // ✅ GET BY ID (Guid أو ML Id)
     // ============================================================
-    private async Task<Analysis?> FindAnalysisAsync(string id, string userId)
+    private async Task<Analysis?> FindAnalysisAsync(string id)
     {
         Analysis? analysis = null;
 
@@ -723,7 +723,7 @@ public class MarketAnalysisController : ControllerBase
         }
         else
         {
-            var analyses = await _analysisRepository.GetByUserIdAsync(userId);
+            var analyses = await _analysisRepository.GetAllAsync();
 
             analysis = analyses.FirstOrDefault(a =>
             {
