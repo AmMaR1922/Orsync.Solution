@@ -444,7 +444,12 @@
 //    /// <summary>
 //    /// Get a specific analysis by ID
 //    /// </summary>
-//    [HttpGet("{id}")]
+//    private async Task<Analysis?> FindAnalysisAsync(string id, string userId)
+    {
+        return await FindAnalysisAsync(id);
+    }
+
+    [HttpGet("{id}")]
 //    [ProducesResponseType(typeof(GenerateMarketAnalysisResponse), 200)]
 //    [ProducesResponseType(404)]
 //    [ProducesResponseType(403)]
@@ -680,7 +685,7 @@ public class MarketAnalysisController : ControllerBase
             var analyses = await _analysisRepository.GetByUserIdAsync(userId);
 
             var responses = analyses
-                .Where(a => !string.IsNullOrWhiteSpace(a.ResponseJson))
+                .Where(a => !string.IsNullOrWhiteSpace(a.ResponseJson) && HasReportId(a.ResponseJson))
                 .Select(a =>
                 {
                     try
@@ -744,6 +749,11 @@ public class MarketAnalysisController : ControllerBase
         }
 
         return analysis;
+    }
+
+    private async Task<Analysis?> FindAnalysisAsync(string id, string userId)
+    {
+        return await FindAnalysisAsync(id);
     }
 
     [HttpGet("{id}")]

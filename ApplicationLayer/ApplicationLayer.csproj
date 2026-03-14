@@ -10,7 +10,7 @@
 		<!-- AutoMapper -->
 
 		<!-- FluentValidation (.NET 8 compatible) -->
-		<PackageReference Include="AutoMapper" Version="13.0.1" />
+		<PackageReference Include="AutoMapper" Version="13.0.2" />
 		<PackageReference Include="FluentValidation" Version="12.1.1" />
 		<PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
 		<PackageReference Include="Microsoft.AspNetCore.Http" Version="2.3.9" />
