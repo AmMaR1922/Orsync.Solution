@@ -27,6 +27,7 @@ public class MLApiService : IMLApiService
     private readonly ILogger<MLApiService> _logger;
     private readonly string _mlApiBaseUrl;
     private readonly string? _mlApiKey;
+    private readonly string? _mlApiFallbackBaseUrl;
 
     public MLApiService(
         HttpClient httpClient,
@@ -40,6 +41,7 @@ public class MLApiService : IMLApiService
             ?? throw new InvalidOperationException("MLApi:BaseUrl not configured");
 
         _mlApiKey = configuration["MLApi:ApiKey"];
+        _mlApiFallbackBaseUrl = configuration["MLApi:FallbackBaseUrl"];
 
         if (int.TryParse(configuration["MLApi:TimeoutSeconds"], out int timeout))
             _httpClient.Timeout = TimeSpan.FromSeconds(timeout);
@@ -67,8 +69,7 @@ public class MLApiService : IMLApiService
         {
             var requestUrl = $"{_mlApiBaseUrl}/api/v1/report";
 
-            _logger.LogInformation("========================================");
-            _logger.LogInformation("Calling ML API: {Url}", requestUrl);
+        var result = JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(responseContent);
 
             var responseContent = await SendJsonRequestAsync(requestUrl, request, cancellationToken);
 
