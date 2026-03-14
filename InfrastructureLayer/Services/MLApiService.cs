@@ -8,6 +8,19 @@ using System.Text;
 
 namespace InfrastructureLayer.Services;
 
+public sealed class MlApiHttpException : Exception
+{
+    public HttpStatusCode StatusCode { get; }
+    public string ResponseBody { get; }
+
+    public MlApiHttpException(HttpStatusCode statusCode, string responseBody)
+        : base($"ML API Error ({statusCode}): {responseBody}")
+    {
+        StatusCode = statusCode;
+        ResponseBody = responseBody;
+    }
+}
+
 public class MLApiService : IMLApiService
 {
     private readonly HttpClient _httpClient;
