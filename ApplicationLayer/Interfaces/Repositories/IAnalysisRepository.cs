@@ -12,6 +12,7 @@ namespace ApplicationLayer.Interfaces.Repositories
         Task<Analysis> AddAsync(Analysis analysis);
         Task<Analysis?> GetByIdAsync(Guid id);
         Task<List<Analysis>> GetByUserIdAsync(string userId);
+        Task<List<Analysis>> GetAllAsync();
         Task UpdateAsync(Analysis analysis);
         Task DeleteAsync(Guid id);
     }
