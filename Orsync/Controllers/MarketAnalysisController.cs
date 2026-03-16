@@ -291,7 +291,7 @@ public class MarketAnalysisController : ControllerBase
                 message = "Database connection is unavailable."
             });
         }
-        catch (Exception ex)
+        catch (RetryLimitExceededException ex)
         {
             _logger.LogError(ex, "GetAll error");
             return StatusCode(500, new
@@ -299,6 +299,16 @@ public class MarketAnalysisController : ControllerBase
                 error = "Internal Server Error",
                 message = ex.Message
             });
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogError(ex, "Database unavailable in GetAll");
+            return StatusCode(503, new { error = "Service Unavailable", message = "Database connection is unavailable." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GetAll Error");
+            return StatusCode(500, new { error = ex.Message, stack = ex.StackTrace });
         }
     }
 
