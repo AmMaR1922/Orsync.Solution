@@ -29,8 +29,7 @@ public class MLApiService : IMLApiService
     private readonly string _mlApiBaseUrl;
     private readonly string? _mlApiFallbackBaseUrl;
     private readonly string? _mlApiKey;
-    private readonly string? _mlApiFallbackBaseUrl;
-
+ 
     public MLApiService(
         HttpClient httpClient,
         IConfiguration configuration,
@@ -44,8 +43,7 @@ public class MLApiService : IMLApiService
 
         _mlApiFallbackBaseUrl = configuration["MLApi:FallbackBaseUrl"];
         _mlApiKey = configuration["MLApi:ApiKey"];
-        _mlApiFallbackBaseUrl = configuration["MLApi:FallbackBaseUrl"];
-
+ 
         if (int.TryParse(configuration["MLApi:TimeoutSeconds"], out var timeoutSeconds))
             _httpClient.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
     }

@@ -1,15 +1,15 @@
+using System.Security.Claims;
 using ApplicationLayer.Contracts.DTOs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Entities;
 using DomainLayer.Enums;
 using InfrastructureLayer.Services;
-using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Storage;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Orsync.Controllers;
 
@@ -22,6 +22,8 @@ public class MarketAnalysisController : ControllerBase
     private readonly IFileStorageService _fileStorageService;
     private readonly IMLApiService _mlApiService;
     private readonly ILogger<MarketAnalysisController> _logger;
+
+    private const string GuestUserId = "anonymous";
 
     public MarketAnalysisController(
         IAnalysisRepository analysisRepository,
@@ -37,7 +39,17 @@ public class MarketAnalysisController : ControllerBase
         _logger = logger;
     }
 
-    private const string GuestUserId = "anonymous";
+    private string ResolveUserId()
+    {
+        return User?.FindFirstValue(ClaimTypes.NameIdentifier)
+               ?? User?.FindFirstValue("sub")
+               ?? GuestUserId;
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
 
     private static string? ExtractReportId(string? responseJson)
     {
@@ -46,7 +58,7 @@ public class MarketAnalysisController : ControllerBase
 
         try
         {
-            var token = JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JToken>(responseJson);
+            var token = JsonConvert.DeserializeObject<JToken>(responseJson);
             return token?["id"]?.ToString();
         }
         catch
@@ -74,13 +86,13 @@ public class MarketAnalysisController : ControllerBase
             if (string.IsNullOrWhiteSpace(therapeuticArea))
                 return BadRequest("TherapeuticArea is required");
 
-            if (!geography.Any())
+            if (geography == null || !geography.Any())
                 return BadRequest("At least one Geography must be selected");
 
-            if (!researchDepth.Any())
+            if (researchDepth == null || !researchDepth.Any())
                 return BadRequest("At least one ResearchDepth must be selected");
 
-            var userId = GuestUserId;
+            var userId = ResolveUserId();
             var mlApiFiles = new List<MLApiFileDto>();
             var fileIds = new List<Guid>();
 
@@ -90,8 +102,11 @@ public class MarketAnalysisController : ControllerBase
 
                 foreach (var file in files.Where(f => f.Length > 0))
                 {
-                    using var stream = file.OpenReadStream();
-                    var uploadResult = await _fileStorageService.UploadFileAsync(stream, file.FileName, file.ContentType);
+                    await using var stream = file.OpenReadStream();
+                    var uploadResult = await _fileStorageService.UploadFileAsync(
+                        stream,
+                        file.FileName,
+                        file.ContentType);
 
                     var uploadedFile = new UploadedFile(
                         userId,
@@ -104,37 +119,48 @@ public class MarketAnalysisController : ControllerBase
                     await _fileRepository.AddAsync(uploadedFile);
 
                     fileIds.Add(uploadedFile.Id);
+
                     mlApiFiles.Add(new MLApiFileDto
                     {
-                        mlApiFiles.Add(new MLApiFileDto
-                        {
-                            FileId = Guid.NewGuid().ToString(),
-                            FileName = file.FileName,
-                            FileUrl = uploadResult.PublicUrl,
-                            FileSize = file.Length,
-                            FileExtension = Path.GetExtension(file.FileName)
-                        });
-                    }
+                        FileId = uploadedFile.Id.ToString(),
+                        FileName = file.FileName,
+                        FileUrl = uploadResult.PublicUrl,
+                        FileSize = file.Length,
+                        FileExtension = Path.GetExtension(file.FileName)
+                    });
                 }
             }
 
             var mlApiRequest = new MLApiRequestDto
             {
                 TherapeuticArea = therapeuticArea.Trim(),
-                SpecificProduct = product?.Trim(),
-                Indication = indication?.Trim(),
+                SpecificProduct = NormalizeOptional(product),
+                Indication = NormalizeOptional(indication),
                 TargetGeography = geography.Select(g => g.ToString()).ToList(),
-                ResearchDepth = researchDepth.Select(d => d.ToString().ToLower()).ToList(),
+                ResearchDepth = researchDepth.Select(d => d.ToString().ToLowerInvariant()).ToList(),
                 Files = mlApiFiles
             };
 
             var mlRawResponse = await _mlApiService.GenerateAnalysisRawAsync(mlApiRequest);
-            var mlResponseObject = JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JObject>(mlRawResponse)
-                                   ?? new Newtonsoft.Json.Linq.JObject();
+
+            JObject mlResponseObject;
+            try
+            {
+                mlResponseObject = JsonConvert.DeserializeObject<JObject>(mlRawResponse) ?? new JObject();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to parse ML API response as JSON. Response: {Response}", mlRawResponse);
+                return StatusCode(502, new
+                {
+                    error = "Bad Gateway",
+                    message = "ML API returned an invalid JSON response."
+                });
+            }
 
             if (mlApiFiles.Any())
             {
-                mlResponseObject["uploaded_files"] = Newtonsoft.Json.Linq.JArray.FromObject(
+                mlResponseObject["uploaded_files"] = JArray.FromObject(
                     mlApiFiles.Select(f => new UploadedFileUrlDto
                     {
                         FileId = f.FileId,
@@ -145,23 +171,28 @@ public class MarketAnalysisController : ControllerBase
                     }).ToList());
             }
 
-            var finalResponseJson = mlResponseObject.ToString();
+            var finalResponseJson = mlResponseObject.ToString(Formatting.None);
 
             if (!HasReportId(finalResponseJson))
             {
                 _logger.LogError("ML API response missing report id. Response: {Response}", finalResponseJson);
-                return StatusCode(502, new { error = "Bad Gateway", message = "ML API response missing required 'id' field" });
+                return StatusCode(502, new
+                {
+                    error = "Bad Gateway",
+                    message = "ML API response missing required 'id' field"
+                });
             }
 
             var analysis = new Analysis(
                 userId,
                 therapeuticArea.Trim(),
-                product ?? "General",
-                indication ?? "General",
+                NormalizeOptional(product) ?? "General",
+                NormalizeOptional(indication) ?? "General",
                 geography,
                 researchDepth);
 
             analysis.SetResponse(finalResponseJson);
+
             if (fileIds.Any())
                 analysis.SetFileIds(fileIds);
 
@@ -172,8 +203,11 @@ public class MarketAnalysisController : ControllerBase
             catch (Exception dbEx)
             {
                 _logger.LogWarning(dbEx, "Could not persist analysis to database. Returning ML response without storage.");
-                mlResponseObject["storage_warning"] = "Analysis generated but could not be saved to database (connection issue).";
-                return Content(mlResponseObject.ToString(), "application/json");
+
+                mlResponseObject["storage_warning"] =
+                    "Analysis generated but could not be saved to database (connection issue).";
+
+                return Content(mlResponseObject.ToString(Formatting.None), "application/json");
             }
 
             return Content(finalResponseJson, "application/json");
@@ -203,20 +237,22 @@ public class MarketAnalysisController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in Generate");
-            return StatusCode(500, new { error = "Internal Server Error", message = ex.Message });
+            return StatusCode(500, new
+            {
+                error = "Internal Server Error",
+                message = ex.Message
+            });
         }
     }
 
     [HttpGet("GetAll")]
     public async Task<IActionResult> GetAll()
     {
-        var userId = GetAuthenticatedUserId();
-        if (string.IsNullOrWhiteSpace(userId))
-            return Ok(new List<object>());
+        var userId = ResolveUserId();
 
         try
         {
-            var analyses = await _analysisRepository.GetByUserIdAsync(GuestUserId);
+            var analyses = await _analysisRepository.GetByUserIdAsync(userId);
 
             var responses = analyses
                 .Where(a => !string.IsNullOrWhiteSpace(a.ResponseJson) && HasReportId(a.ResponseJson))
@@ -224,11 +260,11 @@ public class MarketAnalysisController : ControllerBase
                 {
                     try
                     {
-                        return JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JToken>(a.ResponseJson);
+                        return JsonConvert.DeserializeObject<JToken>(a.ResponseJson);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "JSON Deserialize Failed");
+                        _logger.LogError(ex, "JSON deserialize failed for analysis id {AnalysisId}", a.Id);
                         return null;
                     }
                 })
@@ -249,21 +285,39 @@ public class MarketAnalysisController : ControllerBase
         catch (SqlException ex)
         {
             _logger.LogError(ex, "Database unavailable in GetAll");
-            return StatusCode(503, new { error = "Service Unavailable", message = "Database connection is unavailable." });
+            return StatusCode(503, new
+            {
+                error = "Service Unavailable",
+                message = "Database connection is unavailable."
+            });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "GetAll Error");
-            return StatusCode(500, new { error = ex.Message, stack = ex.StackTrace });
+            _logger.LogError(ex, "GetAll error");
+            return StatusCode(500, new
+            {
+                error = "Internal Server Error",
+                message = ex.Message
+            });
         }
     }
 
-    private async Task<Analysis?> FindAnalysisAsync(string id)
+    private async Task<Analysis?> FindAnalysisAsync(string id, string userId)
     {
         if (Guid.TryParse(id, out var guidId))
-            return await _analysisRepository.GetByIdAsync(guidId);
+        {
+            var analysisByGuid = await _analysisRepository.GetByIdAsync(guidId);
 
-        var analyses = await _analysisRepository.GetByUserIdAsync(GuestUserId);
+            if (analysisByGuid != null &&
+                string.Equals(analysisByGuid.UserId, userId, StringComparison.OrdinalIgnoreCase))
+            {
+                return analysisByGuid;
+            }
+
+            return null;
+        }
+
+        var analyses = await _analysisRepository.GetByUserIdAsync(userId);
 
         return analyses.FirstOrDefault(a =>
         {
@@ -278,24 +332,50 @@ public class MarketAnalysisController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(string id)
     {
-        var analysis = await FindAnalysisAsync(id);
+        try
+        {
+            var userId = ResolveUserId();
+            var analysis = await FindAnalysisAsync(id, userId);
 
-        if (analysis == null)
-            return NotFound();
+            if (analysis == null)
+                return NotFound();
 
-        return Content(analysis.ResponseJson, "application/json");
+            return Content(analysis.ResponseJson, "application/json");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in GetById");
+            return StatusCode(500, new
+            {
+                error = "Internal Server Error",
+                message = ex.Message
+            });
+        }
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id)
     {
-        var analysis = await FindAnalysisAsync(id);
+        try
+        {
+            var userId = ResolveUserId();
+            var analysis = await FindAnalysisAsync(id, userId);
 
-        if (analysis == null)
-            return NotFound();
+            if (analysis == null)
+                return NotFound();
 
-        await _analysisRepository.DeleteAsync(analysis.Id);
+            await _analysisRepository.DeleteAsync(analysis.Id);
 
-        return Ok(new { message = "Deleted successfully" });
+            return Ok(new { message = "Deleted successfully" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in Delete");
+            return StatusCode(500, new
+            {
+                error = "Internal Server Error",
+                message = ex.Message
+            });
+        }
     }
 }
