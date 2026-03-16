@@ -74,8 +74,6 @@ public class MLApiService : IMLApiService
 
             try
             {
-                // Keep response variable declared before any conditional branches
-                // to avoid accidental "use before declaration" regressions.
                 var responseContent = await SendJsonRequestAsync(requestUrl, request, cancellationToken);
 
                 if (IsMissingTherapeuticAreaValidationError(responseContent))
@@ -145,11 +143,16 @@ public class MLApiService : IMLApiService
         var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
         var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
+        _logger.LogInformation("ML API Status (JSON): {Status}", response.StatusCode);
+
         if (response.IsSuccessStatusCode)
             return responseContent;
 
         if (response.StatusCode != HttpStatusCode.UnprocessableEntity)
+        {
+            _logger.LogError("ML API ERROR RESPONSE (JSON): {Response}", responseContent);
             throw new MlApiHttpException(response.StatusCode, responseContent);
+        }
 
         return responseContent;
     }
@@ -166,7 +169,7 @@ public class MLApiService : IMLApiService
             }
             catch (MlApiHttpException ex) when (attempt < maxAttempts && (int)ex.StatusCode >= 500)
             {
-                _logger.LogWarning(ex, "Multipart attempt {Attempt}/{MaxAttempts} failed with upstream {Status}.", attempt, maxAttempts, ex.StatusCode);
+                _logger.LogWarning(ex, "Multipart attempt {Attempt}/{MaxAttempts} failed with upstream {Status}. Retrying...", attempt, maxAttempts, ex.StatusCode);
                 await Task.Delay(TimeSpan.FromSeconds(attempt * 2), cancellationToken);
             }
         }
@@ -204,15 +207,23 @@ public class MLApiService : IMLApiService
             try
             {
                 using var fileResponse = await _httpClient.GetAsync(file.FileUrl, cancellationToken);
+
                 if (!fileResponse.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Skipping file upload to ML API. Could not fetch file URL: {FileUrl}. Status: {Status}", file.FileUrl, fileResponse.StatusCode);
                     continue;
+                }
 
-                var stream = await fileResponse.Content.ReadAsStreamAsync(cancellationToken);
-                var streamContent = new StreamContent(stream);
+                // Materialize bytes before adding to multipart body to avoid
+                // "Error while copying content to a stream" from disposed source streams.
+                var fileBytes = await fileResponse.Content.ReadAsByteArrayAsync(cancellationToken);
+                var byteContent = new ByteArrayContent(fileBytes);
+
                 var contentType = fileResponse.Content.Headers.ContentType?.MediaType;
-                streamContent.Headers.ContentType = new MediaTypeHeaderValue(string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType);
+                byteContent.Headers.ContentType = new MediaTypeHeaderValue(
+                    string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType);
 
-                form.Add(streamContent, "files", string.IsNullOrWhiteSpace(file.FileName) ? "upload.bin" : file.FileName);
+                form.Add(byteContent, "files", string.IsNullOrWhiteSpace(file.FileName) ? "upload.bin" : file.FileName);
             }
             catch (Exception ex)
             {
@@ -225,10 +236,21 @@ public class MLApiService : IMLApiService
         var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
         var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
+        _logger.LogInformation("ML API Status (Multipart): {Status}", response.StatusCode);
+
         if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("ML API ERROR RESPONSE (Multipart): {Response}", responseContent);
             throw new MlApiHttpException(response.StatusCode, responseContent);
+        }
 
         return responseContent;
+    }
+
+    private static bool IsMissingTherapeuticAreaValidationError(string responseContent)
+    {
+        return responseContent.Contains("\"therapeutic_area\"", StringComparison.OrdinalIgnoreCase)
+               && responseContent.Contains("\"missing\"", StringComparison.OrdinalIgnoreCase);
     }
 
     private IEnumerable<string> GetCandidateBaseUrls()
@@ -245,12 +267,6 @@ public class MLApiService : IMLApiService
             urls.Add(_mlApiBaseUrl.Replace("-v2", string.Empty, StringComparison.OrdinalIgnoreCase).TrimEnd('/'));
 
         return urls.Distinct(StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static bool IsMissingTherapeuticAreaValidationError(string responseContent)
-    {
-        return responseContent.Contains("\"therapeutic_area\"", StringComparison.OrdinalIgnoreCase)
-               && responseContent.Contains("\"missing\"", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<bool> HealthCheckAsync()
