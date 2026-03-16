@@ -166,12 +166,13 @@ public class AuthController : ControllerBase
 
         var user = _userManager.Users.FirstOrDefault(u => u.RefreshToken == request.RefreshToken);
 
-        if (user != null)
-        {
-            user.RefreshToken = null;
-            user.RefreshTokenExpiryTime = null;
-            await _userManager.UpdateAsync(user);
-        }
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null)
+            return NotFound(new { error = "User not found" });
+
+        user.RefreshToken = null;
+        user.RefreshTokenExpiryTime = null;
+        await _userManager.UpdateAsync(user);
 
         return Ok(new { message = "Logged out successfully" });
     }

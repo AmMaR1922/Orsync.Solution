@@ -7,6 +7,8 @@ using InfrastructureLayer.Services;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore.Storage;
 using Newtonsoft.Json;
 
 namespace Orsync.Controllers;
@@ -104,12 +106,15 @@ public class MarketAnalysisController : ControllerBase
                     fileIds.Add(uploadedFile.Id);
                     mlApiFiles.Add(new MLApiFileDto
                     {
-                        FileId = uploadedFile.Id.ToString(),
-                        FileName = uploadedFile.FileName,
-                        FileUrl = uploadResult.PublicUrl,
-                        FileSize = uploadedFile.FileSize,
-                        FileExtension = uploadedFile.FileExtension
-                    });
+                        mlApiFiles.Add(new MLApiFileDto
+                        {
+                            FileId = Guid.NewGuid().ToString(),
+                            FileName = file.FileName,
+                            FileUrl = uploadResult.PublicUrl,
+                            FileSize = file.Length,
+                            FileExtension = Path.GetExtension(file.FileName)
+                        });
+                    }
                 }
             }
 
@@ -205,6 +210,10 @@ public class MarketAnalysisController : ControllerBase
     [HttpGet("GetAll")]
     public async Task<IActionResult> GetAll()
     {
+        var userId = GetAuthenticatedUserId();
+        if (string.IsNullOrWhiteSpace(userId))
+            return Ok(new List<object>());
+
         try
         {
             var analyses = await _analysisRepository.GetByUserIdAsync(GuestUserId);
