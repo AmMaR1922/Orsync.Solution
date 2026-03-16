@@ -164,14 +164,16 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> Logout()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var user = await _userManager.FindByIdAsync(userId!);
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized(new { error = "Unauthorized" });
 
-        if (user != null)
-        {
-            user.RefreshToken = null;
-            user.RefreshTokenExpiryTime = null;
-            await _userManager.UpdateAsync(user);
-        }
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null)
+            return NotFound(new { error = "User not found" });
+
+        user.RefreshToken = null;
+        user.RefreshTokenExpiryTime = null;
+        await _userManager.UpdateAsync(user);
 
         return Ok(new { message = "Logged out successfully" });
     }
@@ -184,7 +186,10 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> GetCurrentUser()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var user = await _userManager.FindByIdAsync(userId!);
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized(new { error = "Unauthorized" });
+
+        var user = await _userManager.FindByIdAsync(userId);
 
         if (user == null)
             return NotFound(new { error = "User not found" });
