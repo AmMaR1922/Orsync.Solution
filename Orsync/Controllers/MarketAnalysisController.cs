@@ -4,11 +4,12 @@ using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Entities;
 using DomainLayer.Enums;
 using InfrastructureLayer.Services;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Storage;
 using Newtonsoft.Json;
-using System.Security.Claims;
 
 namespace Orsync.Controllers;
 
@@ -36,13 +37,7 @@ public class MarketAnalysisController : ControllerBase
         _logger = logger;
     }
 
-    private string? GetAuthenticatedUserId()
-    {
-        if (User.Identity?.IsAuthenticated != true)
-            return null;
-
-        return User.FindFirstValue(ClaimTypes.NameIdentifier);
-    }
+    private const string GuestUserId = "anonymous";
 
     private static string? ExtractReportId(string? responseJson)
     {
@@ -85,9 +80,7 @@ public class MarketAnalysisController : ControllerBase
             if (!researchDepth.Any())
                 return BadRequest("At least one ResearchDepth must be selected");
 
-            var userId = GetAuthenticatedUserId();
-            var isAuthenticated = !string.IsNullOrWhiteSpace(userId);
-
+            var userId = GuestUserId;
             var mlApiFiles = new List<MLApiFileDto>();
             var fileIds = new List<Guid>();
 
@@ -100,30 +93,18 @@ public class MarketAnalysisController : ControllerBase
                     using var stream = file.OpenReadStream();
                     var uploadResult = await _fileStorageService.UploadFileAsync(stream, file.FileName, file.ContentType);
 
-                    // Persist uploaded file metadata only for authenticated users
-                    if (isAuthenticated)
-                    {
-                        var uploadedFile = new UploadedFile(
-                            userId!,
-                            file.FileName,
-                            uploadResult.FilePath,
-                            file.Length,
-                            Path.GetExtension(file.FileName),
-                            batchId);
+                    var uploadedFile = new UploadedFile(
+                        userId,
+                        file.FileName,
+                        uploadResult.FilePath,
+                        file.Length,
+                        Path.GetExtension(file.FileName),
+                        batchId);
 
-                        await _fileRepository.AddAsync(uploadedFile);
-                        fileIds.Add(uploadedFile.Id);
+                    await _fileRepository.AddAsync(uploadedFile);
 
-                        mlApiFiles.Add(new MLApiFileDto
-                        {
-                            FileId = uploadedFile.Id.ToString(),
-                            FileName = uploadedFile.FileName,
-                            FileUrl = uploadResult.PublicUrl,
-                            FileSize = uploadedFile.FileSize,
-                            FileExtension = uploadedFile.FileExtension
-                        });
-                    }
-                    else
+                    fileIds.Add(uploadedFile.Id);
+                    mlApiFiles.Add(new MLApiFileDto
                     {
                         mlApiFiles.Add(new MLApiFileDto
                         {
@@ -172,36 +153,27 @@ public class MarketAnalysisController : ControllerBase
                 return StatusCode(502, new { error = "Bad Gateway", message = "ML API response missing required 'id' field" });
             }
 
-            // Persist only for authenticated users so guest data disappears after refresh/close
-            if (isAuthenticated)
+            var analysis = new Analysis(
+                userId,
+                therapeuticArea.Trim(),
+                product ?? "General",
+                indication ?? "General",
+                geography,
+                researchDepth);
+
+            analysis.SetResponse(finalResponseJson);
+            if (fileIds.Any())
+                analysis.SetFileIds(fileIds);
+
+            try
             {
-                var analysis = new Analysis(
-                    userId!,
-                    therapeuticArea.Trim(),
-                    product ?? "General",
-                    indication ?? "General",
-                    geography,
-                    researchDepth);
-
-                analysis.SetResponse(finalResponseJson);
-                if (fileIds.Any())
-                    analysis.SetFileIds(fileIds);
-
-                try
-                {
-                    await _analysisRepository.AddAsync(analysis);
-                }
-                catch (Exception dbEx)
-                {
-                    _logger.LogWarning(dbEx, "Could not persist authenticated analysis to database. Returning ML response without storage.");
-                    mlResponseObject["storage_warning"] = "Analysis generated but could not be saved to database (connection issue).";
-                    return Content(mlResponseObject.ToString(), "application/json");
-                }
+                await _analysisRepository.AddAsync(analysis);
             }
-            else
+            catch (Exception dbEx)
             {
-                mlResponseObject["storage_warning"] = "Guest mode: result is not saved. Login to keep history for GetAll/GetById/Delete.";
-                finalResponseJson = mlResponseObject.ToString();
+                _logger.LogWarning(dbEx, "Could not persist analysis to database. Returning ML response without storage.");
+                mlResponseObject["storage_warning"] = "Analysis generated but could not be saved to database (connection issue).";
+                return Content(mlResponseObject.ToString(), "application/json");
             }
 
             return Content(finalResponseJson, "application/json");
@@ -244,7 +216,7 @@ public class MarketAnalysisController : ControllerBase
 
         try
         {
-            var analyses = await _analysisRepository.GetByUserIdAsync(userId);
+            var analyses = await _analysisRepository.GetByUserIdAsync(GuestUserId);
 
             var responses = analyses
                 .Where(a => !string.IsNullOrWhiteSpace(a.ResponseJson) && HasReportId(a.ResponseJson))
@@ -288,17 +260,10 @@ public class MarketAnalysisController : ControllerBase
 
     private async Task<Analysis?> FindAnalysisAsync(string id)
     {
-        var userId = GetAuthenticatedUserId();
-        if (string.IsNullOrWhiteSpace(userId))
-            return null;
-
         if (Guid.TryParse(id, out var guidId))
-        {
-            var byGuid = await _analysisRepository.GetByIdAsync(guidId);
-            return byGuid != null && byGuid.UserId == userId ? byGuid : null;
-        }
+            return await _analysisRepository.GetByIdAsync(guidId);
 
-        var analyses = await _analysisRepository.GetByUserIdAsync(userId);
+        var analyses = await _analysisRepository.GetByUserIdAsync(GuestUserId);
 
         return analyses.FirstOrDefault(a =>
         {
