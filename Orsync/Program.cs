@@ -4,6 +4,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+const string releaseTag = "auth-swagger-update-2026-03-17";
 
 builder.Services.AddControllers()
     .AddNewtonsoftJson(options =>
@@ -58,6 +59,9 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.UseCors("AllowAll");
+
+// Simple deployment marker endpoint to verify latest publish quickly.
+app.MapGet("/__version", () => Results.Ok(new { version = releaseTag }));
 
 app.MapControllers();
 
