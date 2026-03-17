@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 
 namespace InfrastructureLayer.Services;
@@ -26,9 +27,9 @@ public class MLApiService : IMLApiService
     private readonly HttpClient _httpClient;
     private readonly ILogger<MLApiService> _logger;
     private readonly string _mlApiBaseUrl;
-    private readonly string? _mlApiKey;
     private readonly string? _mlApiFallbackBaseUrl;
-
+    private readonly string? _mlApiKey;
+ 
     public MLApiService(
         HttpClient httpClient,
         IConfiguration configuration,
@@ -40,11 +41,11 @@ public class MLApiService : IMLApiService
         _mlApiBaseUrl = configuration["MLApi:BaseUrl"]
             ?? throw new InvalidOperationException("MLApi:BaseUrl not configured");
 
-        _mlApiKey = configuration["MLApi:ApiKey"];
         _mlApiFallbackBaseUrl = configuration["MLApi:FallbackBaseUrl"];
-
-        if (int.TryParse(configuration["MLApi:TimeoutSeconds"], out int timeout))
-            _httpClient.Timeout = TimeSpan.FromSeconds(timeout);
+        _mlApiKey = configuration["MLApi:ApiKey"];
+ 
+        if (int.TryParse(configuration["MLApi:TimeoutSeconds"], out var timeoutSeconds))
+            _httpClient.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
     }
 
     public async Task<GenerateMarketAnalysisResponse> GenerateAnalysisAsync(
@@ -52,7 +53,6 @@ public class MLApiService : IMLApiService
         CancellationToken cancellationToken = default)
     {
         var responseContent = await GenerateAnalysisRawAsync(request, cancellationToken);
-
         var result = JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(responseContent);
 
         if (result == null)
@@ -70,7 +70,6 @@ public class MLApiService : IMLApiService
         foreach (var baseUrl in GetCandidateBaseUrls())
         {
             var requestUrl = $"{baseUrl}/api/v1/report";
-            _logger.LogInformation("========================================");
             _logger.LogInformation("Calling ML API: {Url}", requestUrl);
 
             try
@@ -79,43 +78,39 @@ public class MLApiService : IMLApiService
 
                 if (IsMissingTherapeuticAreaValidationError(responseContent))
                 {
-                    _logger.LogWarning("ML API rejected JSON payload schema; retrying with multipart/form-data payload.");
+                    _logger.LogWarning("ML API rejected JSON schema; retrying with multipart/form-data payload.");
                     responseContent = await SendMultipartWithRetryAsync(requestUrl, request, cancellationToken);
                 }
 
-                _logger.LogInformation("✓ ML Analysis generated successfully");
                 return responseContent;
             }
             catch (HttpRequestException ex)
             {
                 lastException = ex;
-                _logger.LogWarning(ex, "ML API host/network failure for base URL {BaseUrl}. Trying next candidate if available.", baseUrl);
+                _logger.LogWarning(ex, "ML API host/network failure for {BaseUrl}. Trying next candidate.", baseUrl);
             }
             catch (MlApiHttpException ex) when ((int)ex.StatusCode >= 500)
             {
                 lastException = ex;
-                _logger.LogWarning(ex, "ML API server error for base URL {BaseUrl}. Trying multipart fallback/next candidate.", baseUrl);
+                _logger.LogWarning(ex, "ML API server error for {BaseUrl}. Trying multipart fallback then next candidate.", baseUrl);
 
                 try
                 {
-                    var responseContent = await SendMultipartWithRetryAsync(requestUrl, request, cancellationToken);
-                    _logger.LogInformation("✓ ML Analysis generated successfully via multipart fallback");
-                    return responseContent;
+                    return await SendMultipartWithRetryAsync(requestUrl, request, cancellationToken);
                 }
                 catch (Exception fallbackEx)
                 {
                     lastException = fallbackEx;
-                    _logger.LogWarning(fallbackEx, "Multipart fallback failed for base URL {BaseUrl}. Trying next candidate.", baseUrl);
+                    _logger.LogWarning(fallbackEx, "Multipart fallback failed for {BaseUrl}. Trying next candidate.", baseUrl);
                 }
             }
             catch (Exception ex)
             {
                 lastException = ex;
-                _logger.LogWarning(ex, "ML API call failed for base URL {BaseUrl}. Trying next candidate if available.", baseUrl);
+                _logger.LogWarning(ex, "ML API call failed for {BaseUrl}. Trying next candidate.", baseUrl);
             }
         }
 
-        _logger.LogError(lastException, "ML API call failed for all configured base URLs");
         throw lastException ?? new Exception("ML API call failed for all configured base URLs");
     }
 
@@ -143,8 +138,7 @@ public class MLApiService : IMLApiService
             }) ?? Enumerable.Empty<object>()
         };
 
-        var payloadJson = JsonConvert.SerializeObject(payload);
-        httpRequest.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
+        httpRequest.Content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
 
         var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
         var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -258,7 +252,6 @@ public class MLApiService : IMLApiService
         return responseContent.Contains("\"therapeutic_area\"", StringComparison.OrdinalIgnoreCase)
                && responseContent.Contains("\"missing\"", StringComparison.OrdinalIgnoreCase);
     }
-
 
     private IEnumerable<string> GetCandidateBaseUrls()
     {
