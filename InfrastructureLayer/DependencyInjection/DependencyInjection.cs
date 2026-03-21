@@ -22,6 +22,10 @@ public static class DependencyInjection
             options.UseSqlServer(
                 configuration.GetConnectionString("DefaultConnection"),
                 b => b.MigrationsAssembly("InfrastructureLayer")
+                      .EnableRetryOnFailure(
+                          maxRetryCount: 5,
+                          maxRetryDelay: TimeSpan.FromSeconds(10),
+                          errorNumbersToAdd: null)
             ));
 
         services.AddIdentity<ApplicationUser, IdentityRole>(options =>
@@ -41,8 +45,10 @@ public static class DependencyInjection
         services.AddScoped<IUploadedFileRepository, UploadedFileRepository>();
 
         // Services
+        services.AddMemoryCache();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddScoped<ITokenService, TokenService>();
+        services.AddSingleton<IGuestAnalysisSessionService, GuestAnalysisSessionService>();
 
         // ✨ ML API Service - هنا بيتسجل الـ HttpClient
         services.AddHttpClient<IMLApiService, MLApiService>((serviceProvider, client) =>
