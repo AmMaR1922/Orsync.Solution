@@ -46,6 +46,8 @@ builder.Services.AddSwaggerGen(c =>
             Array.Empty<string>()
         }
     });
+
+    c.OperationFilter<SwaggerFileOperationFilter>();
 });
 
 builder.Services.AddInfrastructure(builder.Configuration);

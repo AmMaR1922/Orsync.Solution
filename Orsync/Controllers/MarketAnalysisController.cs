@@ -17,10 +17,13 @@ namespace Orsync.Controllers;
 [Route("api/[controller]")]
 public class MarketAnalysisController : ControllerBase
 {
+    private const string GuestSessionHeaderName = "X-Guest-Session-Id";
+
     private readonly IAnalysisRepository _analysisRepository;
     private readonly IUploadedFileRepository _fileRepository;
     private readonly IFileStorageService _fileStorageService;
     private readonly IMLApiService _mlApiService;
+    private readonly IGuestAnalysisSessionService _guestAnalysisSessionService;
     private readonly ILogger<MarketAnalysisController> _logger;
 
     private const string GuestUserId = "anonymous";
@@ -30,12 +33,14 @@ public class MarketAnalysisController : ControllerBase
         IUploadedFileRepository fileRepository,
         IFileStorageService fileStorageService,
         IMLApiService mlApiService,
+        IGuestAnalysisSessionService guestAnalysisSessionService,
         ILogger<MarketAnalysisController> logger)
     {
         _analysisRepository = analysisRepository;
         _fileRepository = fileRepository;
         _fileStorageService = fileStorageService;
         _mlApiService = mlApiService;
+        _guestAnalysisSessionService = guestAnalysisSessionService;
         _logger = logger;
     }
 

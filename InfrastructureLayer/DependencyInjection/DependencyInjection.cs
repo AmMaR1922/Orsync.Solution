@@ -45,8 +45,10 @@ public static class DependencyInjection
         services.AddScoped<IUploadedFileRepository, UploadedFileRepository>();
 
         // Services
+        services.AddMemoryCache();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddScoped<ITokenService, TokenService>();
+        services.AddSingleton<IGuestAnalysisSessionService, GuestAnalysisSessionService>();
 
         services.AddHttpClient<IMLApiService, MLApiService>((serviceProvider, client) =>
         {
