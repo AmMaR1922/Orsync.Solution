@@ -1,5 +1,6 @@
 using ApplicationLayer.Contracts.DTOs;
 using ApplicationLayer.Interfaces.Services;
+using HeaderNames = Microsoft.Net.Http.Headers.HeaderNames;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -226,7 +227,8 @@ public class MLApiService : IMLApiService
             {
                 using var fileResponse = await _httpClient.GetAsync(file.FileUrl, cancellationToken);
 
-                if (!fileResponse.IsSuccessStatusCode)
+                using var downloadResponse = await _httpClient.GetAsync(file.FileUrl, cancellationToken);
+                if (!downloadResponse.IsSuccessStatusCode)
                 {
                     _logger.LogWarning(
                         "Skipping file upload to ML API. Could not fetch file URL: {FileUrl}. Status: {Status}",
