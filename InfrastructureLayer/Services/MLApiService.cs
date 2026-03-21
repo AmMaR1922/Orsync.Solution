@@ -1,6 +1,5 @@
 using ApplicationLayer.Contracts.DTOs;
 using ApplicationLayer.Interfaces.Services;
-using Microsoft.Net.Http.Headers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -30,7 +29,7 @@ public class MLApiService : IMLApiService
     private readonly string _mlApiBaseUrl;
     private readonly string? _mlApiFallbackBaseUrl;
     private readonly string? _mlApiKey;
- 
+
     public MLApiService(
         HttpClient httpClient,
         IConfiguration configuration,
@@ -44,7 +43,7 @@ public class MLApiService : IMLApiService
 
         _mlApiFallbackBaseUrl = configuration["MLApi:FallbackBaseUrl"];
         _mlApiKey = configuration["MLApi:ApiKey"];
- 
+
         if (int.TryParse(configuration["MLApi:TimeoutSeconds"], out var timeoutSeconds))
             _httpClient.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
     }
@@ -115,7 +114,10 @@ public class MLApiService : IMLApiService
         throw lastException ?? new Exception("ML API call failed for all configured base URLs");
     }
 
-    private async Task<string> SendJsonRequestAsync(string requestUrl, MLApiRequestDto request, CancellationToken cancellationToken)
+    private async Task<string> SendJsonRequestAsync(
+        string requestUrl,
+        MLApiRequestDto request,
+        CancellationToken cancellationToken)
     {
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUrl);
 
@@ -139,7 +141,10 @@ public class MLApiService : IMLApiService
             }) ?? Enumerable.Empty<object>()
         };
 
-        httpRequest.Content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+        httpRequest.Content = new StringContent(
+            JsonConvert.SerializeObject(payload),
+            Encoding.UTF8,
+            "application/json");
 
         var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
         var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -158,7 +163,10 @@ public class MLApiService : IMLApiService
         return responseContent;
     }
 
-    private async Task<string> SendMultipartWithRetryAsync(string requestUrl, MLApiRequestDto request, CancellationToken cancellationToken)
+    private async Task<string> SendMultipartWithRetryAsync(
+        string requestUrl,
+        MLApiRequestDto request,
+        CancellationToken cancellationToken)
     {
         const int maxAttempts = 3;
 
@@ -170,7 +178,13 @@ public class MLApiService : IMLApiService
             }
             catch (MlApiHttpException ex) when (attempt < maxAttempts && (int)ex.StatusCode >= 500)
             {
-                _logger.LogWarning(ex, "Multipart attempt {Attempt}/{MaxAttempts} failed with upstream {Status}. Retrying...", attempt, maxAttempts, ex.StatusCode);
+                _logger.LogWarning(
+                    ex,
+                    "Multipart attempt {Attempt}/{MaxAttempts} failed with upstream {Status}. Retrying...",
+                    attempt,
+                    maxAttempts,
+                    ex.StatusCode);
+
                 await Task.Delay(TimeSpan.FromSeconds(attempt * 2), cancellationToken);
             }
         }
@@ -178,7 +192,10 @@ public class MLApiService : IMLApiService
         return await SendMultipartRequestAsync(requestUrl, request, cancellationToken);
     }
 
-    private async Task<string> SendMultipartRequestAsync(string requestUrl, MLApiRequestDto request, CancellationToken cancellationToken)
+    private async Task<string> SendMultipartRequestAsync(
+        string requestUrl,
+        MLApiRequestDto request,
+        CancellationToken cancellationToken)
     {
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUrl);
 
@@ -211,12 +228,13 @@ public class MLApiService : IMLApiService
 
                 if (!fileResponse.IsSuccessStatusCode)
                 {
-                    _logger.LogWarning("Skipping file upload to ML API. Could not fetch file URL: {FileUrl}. Status: {Status}", file.FileUrl, fileResponse.StatusCode);
+                    _logger.LogWarning(
+                        "Skipping file upload to ML API. Could not fetch file URL: {FileUrl}. Status: {Status}",
+                        file.FileUrl,
+                        fileResponse.StatusCode);
                     continue;
                 }
 
-                // Materialize bytes before adding to multipart body to avoid
-                // "Error while copying content to a stream" from disposed source streams.
                 var fileBytes = await fileResponse.Content.ReadAsByteArrayAsync(cancellationToken);
                 var byteContent = new ByteArrayContent(fileBytes);
 
@@ -224,7 +242,10 @@ public class MLApiService : IMLApiService
                 byteContent.Headers.ContentType = new MediaTypeHeaderValue(
                     string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType);
 
-                form.Add(byteContent, "files", string.IsNullOrWhiteSpace(file.FileName) ? "upload.bin" : file.FileName);
+                form.Add(
+                    byteContent,
+                    "files",
+                    string.IsNullOrWhiteSpace(file.FileName) ? "upload.bin" : file.FileName);
             }
             catch (Exception ex)
             {
@@ -264,8 +285,11 @@ public class MLApiService : IMLApiService
         if (!string.IsNullOrWhiteSpace(_mlApiFallbackBaseUrl))
             urls.Add(_mlApiFallbackBaseUrl.TrimEnd('/'));
 
-        if (!string.IsNullOrWhiteSpace(_mlApiBaseUrl) && _mlApiBaseUrl.Contains("-v2", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(_mlApiBaseUrl) &&
+            _mlApiBaseUrl.Contains("-v2", StringComparison.OrdinalIgnoreCase))
+        {
             urls.Add(_mlApiBaseUrl.Replace("-v2", string.Empty, StringComparison.OrdinalIgnoreCase).TrimEnd('/'));
+        }
 
         return urls.Distinct(StringComparer.OrdinalIgnoreCase);
     }

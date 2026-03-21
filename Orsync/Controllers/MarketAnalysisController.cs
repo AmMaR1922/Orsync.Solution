@@ -70,21 +70,6 @@ public class MarketAnalysisController : ControllerBase
     private static bool HasReportId(string? responseJson) =>
         !string.IsNullOrWhiteSpace(ExtractReportId(responseJson));
 
-    private static string? ExtractReportId(string? responseJson)
-    {
-        if (string.IsNullOrWhiteSpace(responseJson))
-            return null;
-
-        try
-        {
-            return JObject.Parse(responseJson)["id"]?.ToString();
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
     [HttpPost("generate")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(100_000_000)]
@@ -305,11 +290,14 @@ public class MarketAnalysisController : ControllerBase
                 message = "Database connection is unavailable."
             });
         }
-      
         catch (Exception ex)
         {
             _logger.LogError(ex, "GetAll Error");
-            return StatusCode(500, new { error = ex.Message, stack = ex.StackTrace });
+            return StatusCode(500, new
+            {
+                error = ex.Message,
+                stack = ex.StackTrace
+            });
         }
     }
 
