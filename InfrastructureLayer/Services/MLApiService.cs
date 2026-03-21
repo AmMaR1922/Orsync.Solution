@@ -1,5 +1,6 @@
 using ApplicationLayer.Contracts.DTOs;
 using ApplicationLayer.Interfaces.Services;
+using Microsoft.Net.Http.Headers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -273,7 +274,7 @@ public class MLApiService : IMLApiService
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{_mlApiBaseUrl}/health");
+            using var response = await _httpClient.GetAsync($"{_mlApiBaseUrl.TrimEnd('/')}/health");
             return response.IsSuccessStatusCode;
         }
         catch
