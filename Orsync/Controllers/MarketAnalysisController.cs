@@ -1,12 +1,15 @@
+using System.Security.Claims;
 using ApplicationLayer.Contracts.DTOs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Entities;
 using DomainLayer.Enums;
+using InfrastructureLayer.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore.Storage;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System.Security.Claims;
 
 namespace Orsync.Controllers;
 
@@ -22,6 +25,8 @@ public class MarketAnalysisController : ControllerBase
     private readonly IMLApiService _mlApiService;
     private readonly IGuestAnalysisSessionService _guestAnalysisSessionService;
     private readonly ILogger<MarketAnalysisController> _logger;
+
+    private const string GuestUserId = "anonymous";
 
     public MarketAnalysisController(
         IAnalysisRepository analysisRepository,
@@ -39,29 +44,16 @@ public class MarketAnalysisController : ControllerBase
         _logger = logger;
     }
 
-    private string? GetAuthenticatedUserIdOrNull()
+    private string ResolveUserId()
     {
-        if (User.Identity?.IsAuthenticated != true)
-            return null;
-
-        return User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return User?.FindFirstValue(ClaimTypes.NameIdentifier)
+               ?? User?.FindFirstValue("sub")
+               ?? GuestUserId;
     }
 
-    private string? GetGuestSessionIdOrNull()
+    private static string? NormalizeOptional(string? value)
     {
-        if (!Request.Headers.TryGetValue(GuestSessionHeaderName, out var values))
-            return null;
-
-        var sessionId = values.FirstOrDefault();
-        return string.IsNullOrWhiteSpace(sessionId) ? null : sessionId.Trim();
-    }
-
-    private void AttachGuestSessionContext(GenerateMarketAnalysisResponse response, string guestSessionId)
-    {
-        response.Extra ??= new Dictionary<string, JToken>();
-        response.Extra["guest_mode"] = JToken.FromObject(true);
-        response.Extra["guest_session_id"] = JToken.FromObject(guestSessionId);
-        Response.Headers[GuestSessionHeaderName] = guestSessionId;
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static string? ExtractReportId(string? responseJson)
@@ -71,13 +63,17 @@ public class MarketAnalysisController : ControllerBase
 
         try
         {
-            return JObject.Parse(responseJson)["id"]?.ToString();
+            var token = JsonConvert.DeserializeObject<JToken>(responseJson);
+            return token?["id"]?.ToString();
         }
-        catch (JsonException)
+        catch
         {
             return null;
         }
     }
+
+    private static bool HasReportId(string? responseJson) =>
+        !string.IsNullOrWhiteSpace(ExtractReportId(responseJson));
 
     [HttpPost("generate")]
     [Consumes("multipart/form-data")]
@@ -95,18 +91,13 @@ public class MarketAnalysisController : ControllerBase
             if (string.IsNullOrWhiteSpace(therapeuticArea))
                 return BadRequest("TherapeuticArea is required");
 
-            if (!geography.Any())
+            if (geography == null || !geography.Any())
                 return BadRequest("At least one Geography must be selected");
 
-            if (!researchDepth.Any())
+            if (researchDepth == null || !researchDepth.Any())
                 return BadRequest("At least one ResearchDepth must be selected");
 
-            var authenticatedUserId = GetAuthenticatedUserIdOrNull();
-            var isGuest = string.IsNullOrWhiteSpace(authenticatedUserId);
-            var guestSessionId = isGuest
-                ? GetGuestSessionIdOrNull() ?? _guestAnalysisSessionService.CreateSessionId()
-                : null;
-
+            var userId = ResolveUserId();
             var mlApiFiles = new List<MLApiFileDto>();
             var fileIds = new List<Guid>();
 
@@ -117,208 +108,278 @@ public class MarketAnalysisController : ControllerBase
                 foreach (var file in files.Where(f => f.Length > 0))
                 {
                     await using var stream = file.OpenReadStream();
-                    var uploadResult = await _fileStorageService.UploadFileAsync(stream, file.FileName, file.ContentType);
+                    var uploadResult = await _fileStorageService.UploadFileAsync(
+                        stream,
+                        file.FileName,
+                        file.ContentType);
 
-                    if (!isGuest)
+                    var uploadedFile = new UploadedFile(
+                        userId,
+                        file.FileName,
+                        uploadResult.FilePath,
+                        file.Length,
+                        Path.GetExtension(file.FileName),
+                        batchId);
+
+                    await _fileRepository.AddAsync(uploadedFile);
+                    fileIds.Add(uploadedFile.Id);
+
+                    mlApiFiles.Add(new MLApiFileDto
                     {
-                        var uploadedFile = new UploadedFile(
-                            authenticatedUserId!,
-                            file.FileName,
-                            uploadResult.FilePath,
-                            file.Length,
-                            Path.GetExtension(file.FileName),
-                            batchId);
-
-                        await _fileRepository.AddAsync(uploadedFile);
-                        fileIds.Add(uploadedFile.Id);
-
-                        mlApiFiles.Add(new MLApiFileDto
-                        {
-                            FileId = uploadedFile.Id.ToString(),
-                            FileName = uploadedFile.FileName,
-                            FileUrl = uploadResult.PublicUrl,
-                            FileSize = uploadedFile.FileSize,
-                            FileExtension = uploadedFile.FileExtension
-                        });
-                    }
-                    else
-                    {
-                        mlApiFiles.Add(new MLApiFileDto
-                        {
-                            FileId = Guid.NewGuid().ToString("N"),
-                            FileName = file.FileName,
-                            FileUrl = uploadResult.PublicUrl,
-                            FileSize = file.Length,
-                            FileExtension = Path.GetExtension(file.FileName)
-                        });
-                    }
+                        FileId = uploadedFile.Id.ToString(),
+                        FileName = file.FileName,
+                        FileUrl = uploadResult.PublicUrl,
+                        FileSize = file.Length,
+                        FileExtension = Path.GetExtension(file.FileName)
+                    });
                 }
             }
 
             var mlApiRequest = new MLApiRequestDto
             {
                 TherapeuticArea = therapeuticArea.Trim(),
-                SpecificProduct = product?.Trim(),
-                Indication = indication?.Trim(),
+                SpecificProduct = NormalizeOptional(product),
+                Indication = NormalizeOptional(indication),
                 TargetGeography = geography.Select(g => g.ToString()).ToList(),
                 ResearchDepth = researchDepth.Select(d => d.ToString().ToLowerInvariant()).ToList(),
                 Files = mlApiFiles
             };
 
-            var mlResponse = await _mlApiService.GenerateAnalysisAsync(mlApiRequest);
-            mlResponse.UploadedFiles = mlApiFiles.Select(f => new UploadedFileUrlDto
-            {
-                FileId = f.FileId,
-                FileName = f.FileName,
-                FileUrl = f.FileUrl,
-                FileSize = f.FileSize,
-                FileExtension = f.FileExtension
-            }).ToList();
+            var mlRawResponse = await _mlApiService.GenerateAnalysisRawAsync(mlApiRequest);
 
-            if (isGuest)
+            JObject mlResponseObject;
+            try
             {
-                AttachGuestSessionContext(mlResponse, guestSessionId!);
-                await _guestAnalysisSessionService.SaveAsync(guestSessionId!, mlResponse);
-                return Ok(mlResponse);
+                mlResponseObject = JsonConvert.DeserializeObject<JObject>(mlRawResponse) ?? new JObject();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to parse ML API response as JSON. Response: {Response}", mlRawResponse);
+                return StatusCode(502, new
+                {
+                    error = "Bad Gateway",
+                    message = "ML API returned an invalid JSON response."
+                });
+            }
+
+            if (mlApiFiles.Any())
+            {
+                mlResponseObject["uploaded_files"] = JArray.FromObject(
+                    mlApiFiles.Select(f => new UploadedFileUrlDto
+                    {
+                        FileId = f.FileId,
+                        FileName = f.FileName,
+                        FileUrl = f.FileUrl,
+                        FileSize = f.FileSize,
+                        FileExtension = f.FileExtension
+                    }).ToList());
+            }
+
+            var finalResponseJson = mlResponseObject.ToString(Formatting.None);
+
+            if (!HasReportId(finalResponseJson))
+            {
+                _logger.LogError("ML API response missing report id. Response: {Response}", finalResponseJson);
+                return StatusCode(502, new
+                {
+                    error = "Bad Gateway",
+                    message = "ML API response missing required 'id' field"
+                });
             }
 
             var analysis = new Analysis(
-                authenticatedUserId!,
+                userId,
                 therapeuticArea.Trim(),
-                product?.Trim() ?? "General",
-                indication?.Trim() ?? "General",
+                NormalizeOptional(product) ?? "General",
+                NormalizeOptional(indication) ?? "General",
                 geography,
                 researchDepth);
 
-            analysis.SetResponse(JsonConvert.SerializeObject(mlResponse));
+            analysis.SetResponse(finalResponseJson);
 
             if (fileIds.Any())
                 analysis.SetFileIds(fileIds);
 
-            await _analysisRepository.AddAsync(analysis);
+            try
+            {
+                await _analysisRepository.AddAsync(analysis);
+            }
+            catch (Exception dbEx)
+            {
+                _logger.LogWarning(dbEx, "Could not persist analysis to database. Returning ML response without storage.");
 
-            return Ok(mlResponse);
+                mlResponseObject["storage_warning"] =
+                    "Analysis generated but could not be saved to database (connection issue).";
+
+                return Content(mlResponseObject.ToString(Formatting.None), "application/json");
+            }
+
+            return Content(finalResponseJson, "application/json");
+        }
+        catch (MlApiHttpException ex) when ((int)ex.StatusCode >= 500)
+        {
+            _logger.LogError(ex, "Upstream ML API server error in Generate");
+            return StatusCode(502, new
+            {
+                error = "Bad Gateway",
+                message = "ML API is temporarily unavailable. Please try again in a moment.",
+                upstream_status = (int)ex.StatusCode,
+                upstream_response = ex.ResponseBody
+            });
+        }
+        catch (MlApiHttpException ex)
+        {
+            _logger.LogError(ex, "Upstream ML API error in Generate");
+            return StatusCode(502, new
+            {
+                error = "Bad Gateway",
+                message = ex.Message,
+                upstream_status = (int)ex.StatusCode,
+                upstream_response = ex.ResponseBody
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in Generate");
-            return StatusCode(500, new { error = "Internal Server Error", message = ex.Message });
+            return StatusCode(500, new
+            {
+                error = "Internal Server Error",
+                message = ex.Message
+            });
         }
     }
 
     [HttpGet("GetAll")]
     public async Task<IActionResult> GetAll()
     {
+        var userId = ResolveUserId();
+
         try
         {
-            var authenticatedUserId = GetAuthenticatedUserIdOrNull();
-            if (!string.IsNullOrWhiteSpace(authenticatedUserId))
-            {
-                var analyses = await _analysisRepository.GetByUserIdAsync(authenticatedUserId);
+            var analyses = await _analysisRepository.GetByUserIdAsync(userId);
 
-                var responses = analyses
-                    .Where(a => !string.IsNullOrWhiteSpace(a.ResponseJson))
-                    .Select(a =>
+            var responses = analyses
+                .Where(a => !string.IsNullOrWhiteSpace(a.ResponseJson) && HasReportId(a.ResponseJson))
+                .Select(a =>
+                {
+                    try
                     {
-                        try
-                        {
-                            return JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(a.ResponseJson);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "JSON Deserialize Failed for analysis {AnalysisId}", a.Id);
-                            return null;
-                        }
-                    })
-                    .Where(r => r != null)
-                    .ToList();
+                        return JsonConvert.DeserializeObject<JToken>(a.ResponseJson);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "JSON deserialize failed for analysis id {AnalysisId}", a.Id);
+                        return null;
+                    }
+                })
+                .Where(r => r != null)
+                .ToList();
 
-                return Ok(responses);
-            }
-
-            var guestSessionId = GetGuestSessionIdOrNull();
-            if (string.IsNullOrWhiteSpace(guestSessionId))
-                return Ok(Array.Empty<GenerateMarketAnalysisResponse>());
-
-            var guestResponses = await _guestAnalysisSessionService.GetAllAsync(guestSessionId);
-            Response.Headers[GuestSessionHeaderName] = guestSessionId;
-            return Ok(guestResponses);
+            return Content(JsonConvert.SerializeObject(responses), "application/json");
+        }
+        catch (RetryLimitExceededException ex)
+        {
+            _logger.LogError(ex, "Database retry limit exceeded in GetAll");
+            return StatusCode(503, new
+            {
+                error = "Service Unavailable",
+                message = "Database connection is unavailable or login failed after retries."
+            });
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogError(ex, "Database unavailable in GetAll");
+            return StatusCode(503, new
+            {
+                error = "Service Unavailable",
+                message = "Database connection is unavailable."
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "GetAll Error");
-            return StatusCode(500, new { error = ex.Message, stack = ex.StackTrace });
+            return StatusCode(500, new
+            {
+                error = ex.Message,
+                stack = ex.StackTrace
+            });
         }
     }
 
-    private async Task<Analysis?> FindUserAnalysisAsync(string id, string userId)
+    private async Task<Analysis?> FindAnalysisAsync(string id, string userId)
     {
         if (Guid.TryParse(id, out var guidId))
-            return await _analysisRepository.GetByIdAsync(guidId);
+        {
+            var analysisByGuid = await _analysisRepository.GetByIdAsync(guidId);
+
+            if (analysisByGuid != null &&
+                string.Equals(analysisByGuid.UserId, userId, StringComparison.OrdinalIgnoreCase))
+            {
+                return analysisByGuid;
+            }
+
+            return null;
+        }
 
         var analyses = await _analysisRepository.GetByUserIdAsync(userId);
 
         return analyses.FirstOrDefault(a =>
-            string.Equals(ExtractReportId(a.ResponseJson), id, StringComparison.OrdinalIgnoreCase));
+        {
+            if (string.IsNullOrWhiteSpace(a.ResponseJson))
+                return false;
+
+            var responseId = ExtractReportId(a.ResponseJson);
+            return string.Equals(responseId, id, StringComparison.OrdinalIgnoreCase);
+        });
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(string id)
     {
-        var authenticatedUserId = GetAuthenticatedUserIdOrNull();
-        if (!string.IsNullOrWhiteSpace(authenticatedUserId))
+        try
         {
-            var analysis = await FindUserAnalysisAsync(id, authenticatedUserId);
+            var userId = ResolveUserId();
+            var analysis = await FindAnalysisAsync(id, userId);
 
             if (analysis == null)
                 return NotFound();
 
-            if (analysis.UserId != authenticatedUserId)
-                return Forbid();
-
-            var response = JsonConvert.DeserializeObject<GenerateMarketAnalysisResponse>(analysis.ResponseJson);
-            return Ok(response);
+            return Content(analysis.ResponseJson, "application/json");
         }
-
-        var guestSessionId = GetGuestSessionIdOrNull();
-        if (string.IsNullOrWhiteSpace(guestSessionId))
-            return NotFound();
-
-        var guestResponse = await _guestAnalysisSessionService.GetByIdAsync(guestSessionId, id);
-        if (guestResponse == null)
-            return NotFound();
-
-        Response.Headers[GuestSessionHeaderName] = guestSessionId;
-        return Ok(guestResponse);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in GetById");
+            return StatusCode(500, new
+            {
+                error = "Internal Server Error",
+                message = ex.Message
+            });
+        }
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id)
     {
-        var authenticatedUserId = GetAuthenticatedUserIdOrNull();
-        if (!string.IsNullOrWhiteSpace(authenticatedUserId))
+        try
         {
-            var analysis = await FindUserAnalysisAsync(id, authenticatedUserId);
+            var userId = ResolveUserId();
+            var analysis = await FindAnalysisAsync(id, userId);
 
             if (analysis == null)
                 return NotFound();
 
-            if (analysis.UserId != authenticatedUserId)
-                return Forbid();
-
             await _analysisRepository.DeleteAsync(analysis.Id);
+
             return Ok(new { message = "Deleted successfully" });
         }
-
-        var guestSessionId = GetGuestSessionIdOrNull();
-        if (string.IsNullOrWhiteSpace(guestSessionId))
-            return NotFound();
-
-        var deleted = await _guestAnalysisSessionService.DeleteAsync(guestSessionId, id);
-        if (!deleted)
-            return NotFound();
-
-        Response.Headers[GuestSessionHeaderName] = guestSessionId;
-        return Ok(new { message = "Deleted successfully" });
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in Delete");
+            return StatusCode(500, new
+            {
+                error = "Internal Server Error",
+                message = ex.Message
+            });
+        }
     }
 }
