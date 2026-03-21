@@ -5,7 +5,7 @@ using Swashbuckle.AspNetCore.SwaggerGen;
 namespace Orsync.Filters;
 
 /// <summary>
-/// Enables Swagger to show file upload fields for multipart/form-data endpoints.
+/// Enables Swagger to show IFormFile and List&lt;IFormFile&gt; parameters in UI.
 /// </summary>
 public class SwaggerFileOperationFilter : IOperationFilter
 {
@@ -13,8 +13,7 @@ public class SwaggerFileOperationFilter : IOperationFilter
     {
         var fileParams = context.MethodInfo.GetParameters()
             .Where(p => p.ParameterType == typeof(IFormFile)
-                     || p.ParameterType == typeof(List<IFormFile>)
-                     || p.ParameterType == typeof(IFormFile[]))
+                     || p.ParameterType == typeof(List<IFormFile>))
             .ToList();
 
         if (!fileParams.Any())
@@ -24,32 +23,23 @@ public class SwaggerFileOperationFilter : IOperationFilter
             .Where(p => !string.IsNullOrWhiteSpace(p.Name))
             .ToDictionary(
                 p => p.Name!,
-                p => p.ParameterType == typeof(List<IFormFile>) || p.ParameterType == typeof(IFormFile[])
-                    ? new OpenApiSchema
-                    {
-                        Type = "array",
-                        Items = new OpenApiSchema
-                        {
-                            Type = "string",
-                            Format = "binary"
-                        }
-                    }
-                    : new OpenApiSchema
-                    {
-                        Type = "string",
-                        Format = "binary"
-                    });
+                _ => new OpenApiSchema { Type = "string", Format = "binary" });
 
         operation.RequestBody = new OpenApiRequestBody
         {
-            Content = new Dictionary<string, OpenApiMediaType>
+            Content =
             {
                 ["multipart/form-data"] = new OpenApiMediaType
                 {
                     Schema = new OpenApiSchema
                     {
-                        Type = "object",
-                        Properties = properties
+                        
+                      
+                            Type = "object",
+                            Properties = fileParams.ToDictionary(
+                                p => p.Name ?? string.Empty,
+                                p => new OpenApiSchema { Type = "string", Format = "binary" })
+                         
                     }
                 }
             }
