@@ -14,6 +14,10 @@ public interface IMLApiService
         MLApiRequestDto request,
         CancellationToken cancellationToken = default);
 
+    Task<string> GenerateAnalysisRawAsync(
+        MLApiRequestDto request,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// التحقق من صحة الـ ML API
     /// </summary>

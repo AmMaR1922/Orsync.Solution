@@ -50,16 +50,11 @@ public static class DependencyInjection
         services.AddScoped<ITokenService, TokenService>();
         services.AddSingleton<IGuestAnalysisSessionService, GuestAnalysisSessionService>();
 
-        // ✨ ML API Service - هنا بيتسجل الـ HttpClient
         services.AddHttpClient<IMLApiService, MLApiService>((serviceProvider, client) =>
         {
             var config = serviceProvider.GetRequiredService<IConfiguration>();
-
-            // ✨ قراءة الـ timeout من appsettings.json
             var timeoutSeconds = int.Parse(config["MLApi:TimeoutSeconds"] ?? "600");
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-
-            // Optional: Add default headers
             client.DefaultRequestHeaders.Add("Accept", "application/json");
         });
 
