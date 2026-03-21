@@ -1,6 +1,5 @@
 using ApplicationLayer.Contracts.DTOs;
 using ApplicationLayer.Interfaces.Services;
-using Microsoft.Net.Http.Headers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -227,7 +226,6 @@ public class MLApiService : IMLApiService
             {
                 using var fileResponse = await _httpClient.GetAsync(file.FileUrl, cancellationToken);
 
-                using var fileResponse = await _httpClient.GetAsync(file.FileUrl, cancellationToken);
                 if (!fileResponse.IsSuccessStatusCode)
                 {
                     _logger.LogWarning(

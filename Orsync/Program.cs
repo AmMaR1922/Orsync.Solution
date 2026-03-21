@@ -2,6 +2,8 @@ using InfrastructureLayer.DependencyInjection;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.OpenApi.Models;
+using Orsync;
+using Orsync.Filters;
 
 var builder = WebApplication.CreateBuilder(args);
 const string releaseTag = "auth-swagger-update-2026-03-17";
@@ -12,7 +14,6 @@ builder.Services.AddControllers()
         options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
     });
 
-// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -52,7 +53,6 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddInfrastructure(builder.Configuration);
 
-// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -94,7 +94,6 @@ app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Simple deployment marker endpoint to verify latest publish quickly.
 app.MapGet("/__version", () => Results.Ok(new { version = releaseTag }));
 
 app.MapControllers();
