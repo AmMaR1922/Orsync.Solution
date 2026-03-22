@@ -1,11 +1,11 @@
-﻿using ApplicationLayer.Contracts.DTOs;
+﻿using System.Security.Claims;
+using ApplicationLayer.Contracts.DTOs;
 using InfrastructureLayer.Identity;
 using InfrastructureLayer.Services;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using System.Security.Claims;
 
 namespace Orsync.Controllers;
 
@@ -55,7 +55,11 @@ public class AuthController : ControllerBase
         if (!result.Succeeded)
             return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
 
-        return Ok(new { message = "User registered successfully", userId = user.Id });
+        return Ok(new
+        {
+            message = "User registered successfully",
+            userId = user.Id
+        });
     }
 
     /// <summary>
@@ -75,13 +79,17 @@ public class AuthController : ControllerBase
         if (!result.Succeeded)
             return Unauthorized(new { message = "Invalid email or password" });
 
-        // توليد Tokens
         var accessToken = _tokenService.GenerateAccessToken(user);
         var refreshToken = _tokenService.GenerateRefreshToken();
 
-        // حفظ Refresh Token في Database
         var jwtSettings = _configuration.GetSection("JwtSettings");
-        var refreshTokenExpiryDays = int.Parse(jwtSettings["RefreshTokenExpiryInDays"] ?? "7");
+        var refreshTokenExpiryDays = int.TryParse(jwtSettings["RefreshTokenExpiryInDays"], out var refreshDays)
+            ? refreshDays
+            : 7;
+
+        var accessTokenExpiryMinutes = int.TryParse(jwtSettings["AccessTokenExpiryInMinutes"], out var accessMinutes)
+            ? accessMinutes
+            : 15;
 
         user.RefreshToken = refreshToken;
         user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(refreshTokenExpiryDays);
@@ -91,7 +99,7 @@ public class AuthController : ControllerBase
         {
             AccessToken = accessToken,
             RefreshToken = refreshToken,
-            AccessTokenExpiry = DateTime.UtcNow.AddMinutes(int.Parse(jwtSettings["AccessTokenExpiryInMinutes"] ?? "15")),
+            AccessTokenExpiry = DateTime.UtcNow.AddMinutes(accessTokenExpiryMinutes),
             RefreshTokenExpiry = user.RefreshTokenExpiryTime.Value,
             UserId = user.Id,
             Email = user.Email!,
@@ -111,31 +119,35 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.AccessToken) || string.IsNullOrWhiteSpace(request.RefreshToken))
             return BadRequest(new { error = "Invalid tokens" });
 
-        // استخراج Claims من Access Token القديم (حتى لو منتهي)
         var principal = _tokenService.GetPrincipalFromExpiredToken(request.AccessToken);
         if (principal == null)
             return BadRequest(new { error = "Invalid access token" });
 
         var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-        var user = await _userManager.FindByIdAsync(userId!);
+        if (string.IsNullOrWhiteSpace(userId))
+            return BadRequest(new { error = "Invalid access token claims" });
 
+        var user = await _userManager.FindByIdAsync(userId);
         if (user == null)
             return NotFound(new { error = "User not found" });
 
-        // التحقق من Refresh Token
         if (user.RefreshToken != request.RefreshToken)
             return Unauthorized(new { error = "Invalid refresh token" });
 
-        if (user.RefreshTokenExpiryTime <= DateTime.UtcNow)
+        if (!user.RefreshTokenExpiryTime.HasValue || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
             return Unauthorized(new { error = "Refresh token expired. Please login again." });
 
-        // توليد Tokens جديدة
         var newAccessToken = _tokenService.GenerateAccessToken(user);
         var newRefreshToken = _tokenService.GenerateRefreshToken();
 
-        // تحديث Refresh Token في Database
         var jwtSettings = _configuration.GetSection("JwtSettings");
-        var refreshTokenExpiryDays = int.Parse(jwtSettings["RefreshTokenExpiryInDays"] ?? "7");
+        var refreshTokenExpiryDays = int.TryParse(jwtSettings["RefreshTokenExpiryInDays"], out var refreshDays)
+            ? refreshDays
+            : 7;
+
+        var accessTokenExpiryMinutes = int.TryParse(jwtSettings["AccessTokenExpiryInMinutes"], out var accessMinutes)
+            ? accessMinutes
+            : 15;
 
         user.RefreshToken = newRefreshToken;
         user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(refreshTokenExpiryDays);
@@ -145,7 +157,7 @@ public class AuthController : ControllerBase
         {
             AccessToken = newAccessToken,
             RefreshToken = newRefreshToken,
-            AccessTokenExpiry = DateTime.UtcNow.AddMinutes(int.Parse(jwtSettings["AccessTokenExpiryInMinutes"] ?? "15")),
+            AccessTokenExpiry = DateTime.UtcNow.AddMinutes(accessTokenExpiryMinutes),
             RefreshTokenExpiry = user.RefreshTokenExpiryTime.Value,
             UserId = user.Id,
             Email = user.Email!,
@@ -160,14 +172,14 @@ public class AuthController : ControllerBase
     /// تسجيل الخروج (Logout) - حذف Refresh Token
     /// </summary>
     [HttpPost("logout")]
-    [Authorize]
-    public async Task<IActionResult> Logout()
+    public async Task<IActionResult> Logout([FromBody] RefreshTokenRequest request)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrWhiteSpace(userId))
-            return Unauthorized(new { error = "Unauthorized" });
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+            return BadRequest(new { error = "Refresh token is required" });
 
-        var user = await _userManager.FindByIdAsync(userId);
+        var user = await _userManager.Users
+            .FirstOrDefaultAsync(u => u.RefreshToken == request.RefreshToken);
+
         if (user == null)
             return NotFound(new { error = "User not found" });
 
@@ -182,12 +194,10 @@ public class AuthController : ControllerBase
     /// الحصول على معلومات المستخدم الحالي
     /// </summary>
     [HttpGet("me")]
-    [Authorize]
-    public async Task<IActionResult> GetCurrentUser()
+    public async Task<IActionResult> GetCurrentUser([FromQuery] string userId)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(userId))
-            return Unauthorized(new { error = "Unauthorized" });
+            return BadRequest(new { error = "userId is required" });
 
         var user = await _userManager.FindByIdAsync(userId);
 
