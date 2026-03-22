@@ -16,7 +16,7 @@ namespace Orsync.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]  // ✅ كل الـ endpoints محمية - لازم login
+[Authorize]
 public class MarketAnalysisController : ControllerBase
 {
     private readonly IAnalysisRepository _analysisRepository;
@@ -39,12 +39,8 @@ public class MarketAnalysisController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Resolves user ID from JWT token - requires authentication
-    /// </summary>
     private string ResolveUserId()
     {
-        // Get userId from JWT token
         var authenticatedUserId = User?.FindFirstValue(ClaimTypes.NameIdentifier)
                                   ?? User?.FindFirstValue("sub");
 
@@ -54,7 +50,6 @@ public class MarketAnalysisController : ControllerBase
             return authenticatedUserId;
         }
 
-        // No user found - should not happen with [Authorize]
         _logger.LogWarning("Unauthorized access attempt - no userId found");
         throw new UnauthorizedAccessException("Authentication required");
     }
@@ -83,25 +78,6 @@ public class MarketAnalysisController : ControllerBase
     private static bool HasReportId(string? responseJson) =>
         !string.IsNullOrWhiteSpace(ExtractReportId(responseJson));
 
-    // ============================================================
-    // ✅ GENERATE
-    // ============================================================
-
-    private static string? ExtractReportId(string? responseJson)
-    {
-        if (string.IsNullOrWhiteSpace(responseJson))
-            return null;
-
-        try
-        {
-            return JObject.Parse(responseJson)["id"]?.ToString();
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
     [HttpPost("generate")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(100_000_000)]
@@ -128,7 +104,6 @@ public class MarketAnalysisController : ControllerBase
             var mlApiFiles = new List<MLApiFileDto>();
             var fileIds = new List<Guid>();
 
-            // ✅ Upload files
             if (files != null && files.Any())
             {
                 var batchId = Guid.NewGuid();
@@ -163,7 +138,6 @@ public class MarketAnalysisController : ControllerBase
                 }
             }
 
-            // ✅ Prepare ML API request
             var mlApiRequest = new MLApiRequestDto
             {
                 TherapeuticArea = therapeuticArea.Trim(),
@@ -174,7 +148,6 @@ public class MarketAnalysisController : ControllerBase
                 Files = mlApiFiles
             };
 
-            // ✅ Call ML API
             var mlRawResponse = await _mlApiService.GenerateAnalysisRawAsync(mlApiRequest);
 
             JObject mlResponseObject;
@@ -192,7 +165,6 @@ public class MarketAnalysisController : ControllerBase
                 });
             }
 
-            // ✅ Add uploaded files to response
             if (mlApiFiles.Any())
             {
                 mlResponseObject["uploaded_files"] = JArray.FromObject(
@@ -218,7 +190,6 @@ public class MarketAnalysisController : ControllerBase
                 });
             }
 
-            // ✅ Save to database
             var analysis = new Analysis(
                 userId,
                 therapeuticArea.Trim(),
@@ -270,6 +241,15 @@ public class MarketAnalysisController : ControllerBase
                 upstream_response = ex.ResponseBody
             });
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Unauthorized access in Generate");
+            return Unauthorized(new
+            {
+                error = "Unauthorized",
+                message = ex.Message
+            });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in Generate");
@@ -280,10 +260,6 @@ public class MarketAnalysisController : ControllerBase
             });
         }
     }
-
-    // ============================================================
-    // ✅ GET ALL - Returns only user's own data
-    // ============================================================
 
     [HttpGet("GetAll")]
     public async Task<IActionResult> GetAll()
@@ -335,6 +311,15 @@ public class MarketAnalysisController : ControllerBase
                 message = "Database connection is unavailable."
             });
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Unauthorized access in GetAll");
+            return Unauthorized(new
+            {
+                error = "Unauthorized",
+                message = ex.Message
+            });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "GetAll Error");
@@ -346,13 +331,8 @@ public class MarketAnalysisController : ControllerBase
         }
     }
 
-    // ============================================================
-    // ✅ FIND ANALYSIS (by Guid or Report ID)
-    // ============================================================
-
     private async Task<Analysis?> FindAnalysisAsync(string id, string userId)
     {
-        // Try parse as Guid first
         if (Guid.TryParse(id, out var guidId))
         {
             var analysisByGuid = await _analysisRepository.GetByIdAsync(guidId);
@@ -366,7 +346,6 @@ public class MarketAnalysisController : ControllerBase
             return null;
         }
 
-        // Otherwise search by ML report ID
         var analyses = await _analysisRepository.GetByUserIdAsync(userId);
 
         return analyses.FirstOrDefault(a =>
@@ -378,10 +357,6 @@ public class MarketAnalysisController : ControllerBase
             return string.Equals(responseId, id, StringComparison.OrdinalIgnoreCase);
         });
     }
-
-    // ============================================================
-    // ✅ GET BY ID
-    // ============================================================
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(string id)
@@ -396,6 +371,15 @@ public class MarketAnalysisController : ControllerBase
 
             return Content(analysis.ResponseJson, "application/json");
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Unauthorized access in GetById");
+            return Unauthorized(new
+            {
+                error = "Unauthorized",
+                message = ex.Message
+            });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in GetById");
@@ -406,10 +390,6 @@ public class MarketAnalysisController : ControllerBase
             });
         }
     }
-
-    // ============================================================
-    // ✅ DELETE
-    // ============================================================
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id)
@@ -425,6 +405,15 @@ public class MarketAnalysisController : ControllerBase
             await _analysisRepository.DeleteAsync(analysis.Id);
 
             return Ok(new { message = "Deleted successfully" });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Unauthorized access in Delete");
+            return Unauthorized(new
+            {
+                error = "Unauthorized",
+                message = ex.Message
+            });
         }
         catch (Exception ex)
         {
