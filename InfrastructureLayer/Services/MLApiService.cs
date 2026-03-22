@@ -1,6 +1,5 @@
-using ApplicationLayer.Contracts.DTOs;
+﻿using ApplicationLayer.Contracts.DTOs;
 using ApplicationLayer.Interfaces.Services;
-using HeaderNames = Microsoft.Net.Http.Headers.HeaderNames;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -204,6 +203,7 @@ public class MLApiService : IMLApiService
             httpRequest.Headers.Add("X-API-Key", _mlApiKey);
 
         using var form = new MultipartFormDataContent();
+
         form.Add(new StringContent(request.TherapeuticArea ?? string.Empty), "therapeutic_area");
 
         if (!string.IsNullOrWhiteSpace(request.SpecificProduct))
@@ -212,12 +212,18 @@ public class MLApiService : IMLApiService
         if (!string.IsNullOrWhiteSpace(request.Indication))
             form.Add(new StringContent(request.Indication), "indication");
 
-        foreach (var geo in request.TargetGeography ?? Enumerable.Empty<string>())
-            form.Add(new StringContent(geo), "target_geography");
+        // ✅ FIX: Send as comma-separated string, not multiple fields
+        var geographyString = request.TargetGeography != null && request.TargetGeography.Any()
+            ? string.Join(",", request.TargetGeography)
+            : "Global";
+        form.Add(new StringContent(geographyString), "target_geography");
 
-        foreach (var depth in request.ResearchDepth ?? Enumerable.Empty<string>())
-            form.Add(new StringContent(depth), "research_depth");
+        var depthString = request.ResearchDepth != null && request.ResearchDepth.Any()
+            ? string.Join(",", request.ResearchDepth)
+            : "standard";
+        form.Add(new StringContent(depthString), "research_depth");
 
+        // ✅ Upload files
         foreach (var file in request.Files ?? Enumerable.Empty<MLApiFileDto>())
         {
             if (string.IsNullOrWhiteSpace(file.FileUrl))
@@ -225,29 +231,16 @@ public class MLApiService : IMLApiService
 
             try
             {
-                using var fileResponse = await _httpClient.GetAsync(file.FileUrl, cancellationToken);
-
-                using var downloadResponse = await _httpClient.GetAsync(file.FileUrl, cancellationToken);
-                if (!downloadResponse.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning(
-                        "Skipping file upload to ML API. Could not fetch file URL: {FileUrl}. Status: {Status}",
-                        file.FileUrl,
-                        fileResponse.StatusCode);
-                    continue;
-                }
-
-                var fileBytes = await fileResponse.Content.ReadAsByteArrayAsync(cancellationToken);
+                // ✅ FIX: Download once, not twice
+                var fileBytes = await _httpClient.GetByteArrayAsync(file.FileUrl, cancellationToken);
                 var byteContent = new ByteArrayContent(fileBytes);
 
-                var contentType = fileResponse.Content.Headers.ContentType?.MediaType;
-                byteContent.Headers.ContentType = new MediaTypeHeaderValue(
-                    string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType);
+                byteContent.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
 
                 form.Add(
                     byteContent,
                     "files",
-                    string.IsNullOrWhiteSpace(file.FileName) ? "upload.bin" : file.FileName);
+                    string.IsNullOrWhiteSpace(file.FileName) ? "upload.pdf" : file.FileName);
             }
             catch (Exception ex)
             {
