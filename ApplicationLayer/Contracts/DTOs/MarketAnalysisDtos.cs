@@ -50,6 +50,9 @@ namespace ApplicationLayer.Contracts.DTOs
 
         [JsonProperty("uploaded_files")]
         public List<UploadedFileUrlDto> UploadedFiles { get; set; } = new();
+
+        [JsonExtensionData]
+        public IDictionary<string, JToken>? Extra { get; set; }
     }
 
     // ========================================
@@ -57,25 +60,58 @@ namespace ApplicationLayer.Contracts.DTOs
     // ========================================
     public class FlexibleExecutiveSummaryConverter : JsonConverter<ExecutiveSummaryDto>
     {
-        public override ExecutiveSummaryDto ReadJson(JsonReader reader, Type objectType, ExecutiveSummaryDto existingValue, bool hasExistingValue, JsonSerializer serializer)
+        public override ExecutiveSummaryDto ReadJson(JsonReader reader, Type objectType, ExecutiveSummaryDto? existingValue, bool hasExistingValue, JsonSerializer serializer)
         {
             if (reader.TokenType == JsonToken.String)
             {
-                string text = (string)reader.Value!;
+                var text = (string?)reader.Value;
+
+                if (string.IsNullOrWhiteSpace(text))
+                    return new ExecutiveSummaryDto();
+
+                try
+                {
+                    var token = JToken.Parse(text);
+
+                    if (token.Type == JTokenType.Object)
+                    {
+                        var obj = (JObject)token;
+
+                        if (obj.TryGetValue("executive_summary", out var summaryToken) && summaryToken.Type == JTokenType.String)
+                        {
+                            return new ExecutiveSummaryDto
+                            {
+                                MarketOverview = new MarketOverviewSummaryDto
+                                {
+                                    DefinedMarket = summaryToken.ToString()
+                                }
+                            };
+                        }
+
+                        return obj.ToObject<ExecutiveSummaryDto>() ?? new ExecutiveSummaryDto();
+                    }
+                }
+                catch (JsonReaderException)
+                {
+                    // Fallback to plain text handling
+                }
+
                 return new ExecutiveSummaryDto
                 {
                     MarketOverview = new MarketOverviewSummaryDto { DefinedMarket = text }
                 };
             }
-            else if (reader.TokenType == JsonToken.StartObject)
+
+            if (reader.TokenType == JsonToken.StartObject)
             {
                 JObject obj = JObject.Load(reader);
-                return obj.ToObject<ExecutiveSummaryDto>()!;
+                return obj.ToObject<ExecutiveSummaryDto>() ?? new ExecutiveSummaryDto();
             }
+
             return new ExecutiveSummaryDto();
         }
 
-        public override void WriteJson(JsonWriter writer, ExecutiveSummaryDto value, JsonSerializer serializer)
+        public override void WriteJson(JsonWriter writer, ExecutiveSummaryDto? value, JsonSerializer serializer)
         {
             serializer.Serialize(writer, value);
         }
@@ -301,6 +337,12 @@ namespace ApplicationLayer.Contracts.DTOs
 
         [JsonProperty("patient_journey")]
         public PatientJourneyDto PatientJourney { get; set; } = new();
+
+        [JsonProperty("fears_or_pains_vs_motives")]
+        public string FearsOrPainsVsMotives { get; set; } = string.Empty;
+
+        [JsonExtensionData]
+        public IDictionary<string, JToken>? Extra { get; set; }
     }
 
     public class PatientJourneyDto
@@ -319,6 +361,18 @@ namespace ApplicationLayer.Contracts.DTOs
 
         [JsonProperty("monitoring")]
         public string Monitoring { get; set; } = string.Empty;
+
+        [JsonProperty("customer_flow")]
+        public string CustomerFlow { get; set; } = string.Empty;
+
+        [JsonProperty("customer_journey_map")]
+        public string CustomerJourneyMap { get; set; } = string.Empty;
+
+        [JsonProperty("stakeholders_and_influencers_mapping")]
+        public string StakeholdersAndInfluencersMapping { get; set; } = string.Empty;
+
+        [JsonExtensionData]
+        public IDictionary<string, JToken>? Extra { get; set; }
     }
 
     public class CompetitorDetailDto
