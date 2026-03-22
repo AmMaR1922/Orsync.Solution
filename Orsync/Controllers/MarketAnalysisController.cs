@@ -102,6 +102,21 @@ public class MarketAnalysisController : ControllerBase
         }
     }
 
+    private static string? ExtractReportId(string? responseJson)
+    {
+        if (string.IsNullOrWhiteSpace(responseJson))
+            return null;
+
+        try
+        {
+            return JObject.Parse(responseJson)["id"]?.ToString();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     [HttpPost("generate")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(100_000_000)]
