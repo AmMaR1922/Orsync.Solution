@@ -78,6 +78,21 @@ public class MarketAnalysisController : ControllerBase
     private static bool HasReportId(string? responseJson) =>
         !string.IsNullOrWhiteSpace(ExtractReportId(responseJson));
 
+    private static string? ExtractReportId(string? responseJson)
+    {
+        if (string.IsNullOrWhiteSpace(responseJson))
+            return null;
+
+        try
+        {
+            return JObject.Parse(responseJson)["id"]?.ToString();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     [HttpPost("generate")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(100_000_000)]
@@ -358,7 +373,7 @@ public class MarketAnalysisController : ControllerBase
         });
     }
 
-    [HttpGet("{id}")]
+    [HttpGet("GetById/{id}")]
     public async Task<IActionResult> GetById(string id)
     {
         try
