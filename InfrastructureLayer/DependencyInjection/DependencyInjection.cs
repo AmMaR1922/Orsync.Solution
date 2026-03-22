@@ -22,6 +22,10 @@ public static class DependencyInjection
             options.UseSqlServer(
                 configuration.GetConnectionString("DefaultConnection"),
                 b => b.MigrationsAssembly("InfrastructureLayer")
+                      .EnableRetryOnFailure(
+                          maxRetryCount: 5,
+                          maxRetryDelay: TimeSpan.FromSeconds(10),
+                          errorNumbersToAdd: null)
             ));
 
         services.AddIdentity<ApplicationUser, IdentityRole>(options =>
