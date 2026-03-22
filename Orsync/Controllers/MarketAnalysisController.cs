@@ -1,4 +1,4 @@
-﻿using ApplicationLayer.Contracts.DTOs;
+using ApplicationLayer.Contracts.DTOs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Entities;
@@ -86,6 +86,21 @@ public class MarketAnalysisController : ControllerBase
     // ============================================================
     // ✅ GENERATE
     // ============================================================
+
+    private static string? ExtractReportId(string? responseJson)
+    {
+        if (string.IsNullOrWhiteSpace(responseJson))
+            return null;
+
+        try
+        {
+            return JObject.Parse(responseJson)["id"]?.ToString();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     [HttpPost("generate")]
     [Consumes("multipart/form-data")]

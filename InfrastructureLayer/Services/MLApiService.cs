@@ -1,5 +1,6 @@
-﻿using ApplicationLayer.Contracts.DTOs;
+ using ApplicationLayer.Contracts.DTOs;
 using ApplicationLayer.Interfaces.Services;
+using HeaderNames = Microsoft.Net.Http.Headers.HeaderNames;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
